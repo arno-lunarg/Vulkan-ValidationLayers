@@ -48,3 +48,7 @@ buildtools/
 depot_tools/
 testing/
 tools/
+
+# Files created along a VS solution for the scripts
+scripts/*.args.json
+scripts/*.pyproj
