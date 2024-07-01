@@ -23,6 +23,7 @@
 #include "gpu/error_message/gpuav_vuids.h"
 #include "gpu/descriptor_validation/gpuav_descriptor_validation.h"
 #include "gpu/shaders/gpu_error_header.h"
+#include "state_tracker/shader_object_state.h"
 
 namespace gpuav {
 
@@ -310,7 +311,7 @@ void CommandBuffer::AllocateResources() {
     }
 }
 
-bool CommandBuffer::UpdateBdaRangesBuffer() {
+bool CommandBuffer::UpdateBufferDeviceAddressRangesBuffer() {
     auto gpuav = static_cast<Validator *>(&dev_data);
 
     // By supplying a "date"
@@ -328,7 +329,7 @@ bool CommandBuffer::UpdateBdaRangesBuffer() {
     if (result != VK_SUCCESS) {
         if (result != VK_SUCCESS) {
             gpuav->InternalError(gpuav->device, Location(vvl::Func::vkQueueSubmit),
-                                 "Unable to map device memory in UpdateBdaRangesBuffer. Aborting GPU-AV.", true);
+                                 "Unable to map device memory in UpdateBufferDeviceAddressRangesBuffer. Aborting GPU-AV.", true);
             return false;
         }
     }
@@ -457,7 +458,7 @@ bool CommandBuffer::PreProcess() {
         return false;
     }
 
-    succeeded = UpdateBdaRangesBuffer();
+    succeeded = UpdateBufferDeviceAddressRangesBuffer();
     if (!succeeded) {
         return false;
     }
@@ -541,6 +542,246 @@ Queue::Queue(Validator &state, VkQueue q, uint32_t index, VkDeviceQueueCreateFla
 
 vvl::PreSubmitResult Queue::PreSubmit(std::vector<vvl::QueueSubmission> &&submissions) {
     return gpu_tracker::Queue::PreSubmit(std::move(submissions));
+}
+
+void RestorablePipelineState::Create(vvl::CommandBuffer &cb_state, VkPipelineBindPoint bind_point) {
+    cmd_buffer_ = cb_state.VkHandle();
+    pipeline_bind_point_ = bind_point;
+    const auto lv_bind_point = ConvertToLvlBindPoint(bind_point);
+
+    LastBound &last_bound = cb_state.lastBound[lv_bind_point];
+    if (last_bound.pipeline_state) {
+        pipeline_ = last_bound.pipeline_state->VkHandle();
+
+    } else {
+        assert(shader_objects_.empty());
+        if (lv_bind_point == BindPoint_Graphics) {
+            shader_objects_ = last_bound.GetAllBoundGraphicsShaders();
+        } else if (lv_bind_point == BindPoint_Compute) {
+            auto compute_shader = last_bound.GetShaderState(ShaderObjectStage::COMPUTE);
+            if (compute_shader) {
+                shader_objects_.emplace_back(compute_shader);
+            }
+        }
+    }
+
+    desc_set_pipeline_layout_ = last_bound.desc_set_pipeline_layout;
+
+    push_constants_data_ = cb_state.push_constant_data_chunks;
+
+    descriptor_sets_.reserve(last_bound.per_set.size());
+    for (std::size_t i = 0; i < last_bound.per_set.size(); i++) {
+        const auto &bound_descriptor_set = last_bound.per_set[i].bound_descriptor_set;
+        if (bound_descriptor_set) {
+            descriptor_sets_.push_back(std::make_pair(bound_descriptor_set->VkHandle(), static_cast<uint32_t>(i)));
+            if (bound_descriptor_set->IsPushDescriptor()) {
+                push_descriptor_set_index_ = static_cast<uint32_t>(i);
+            }
+            dynamic_offsets_.push_back(last_bound.per_set[i].dynamicOffsets);
+        }
+    }
+
+    if (last_bound.push_descriptor_set) {
+        push_descriptor_set_writes_ = last_bound.push_descriptor_set->GetWrites();
+    }
+}
+
+void RestorablePipelineState::Restore() const {
+    if (pipeline_ != VK_NULL_HANDLE) {
+        DispatchCmdBindPipeline(cmd_buffer_, pipeline_bind_point_, pipeline_);
+    }
+    if (!shader_objects_.empty()) {
+        std::vector<VkShaderStageFlagBits> stages;
+        std::vector<VkShaderEXT> shaders;
+        for (const vvl::ShaderObject *shader_obj : shader_objects_) {
+            stages.emplace_back(shader_obj->create_info.stage);
+            shaders.emplace_back(shader_obj->VkHandle());
+        }
+        DispatchCmdBindShadersEXT(cmd_buffer_, static_cast<uint32_t>(shader_objects_.size()), stages.data(), shaders.data());
+    }
+
+    for (std::size_t i = 0; i < descriptor_sets_.size(); i++) {
+        VkDescriptorSet descriptor_set = descriptor_sets_[i].first;
+        if (descriptor_set != VK_NULL_HANDLE) {
+            DispatchCmdBindDescriptorSets(cmd_buffer_, pipeline_bind_point_, desc_set_pipeline_layout_, descriptor_sets_[i].second,
+                                          1, &descriptor_set, static_cast<uint32_t>(dynamic_offsets_[i].size()),
+                                          dynamic_offsets_[i].data());
+        }
+    }
+
+    if (!push_descriptor_set_writes_.empty()) {
+        DispatchCmdPushDescriptorSetKHR(cmd_buffer_, pipeline_bind_point_, desc_set_pipeline_layout_, push_descriptor_set_index_,
+                                        static_cast<uint32_t>(push_descriptor_set_writes_.size()),
+                                        reinterpret_cast<const VkWriteDescriptorSet *>(push_descriptor_set_writes_.data()));
+    }
+
+    for (const auto &push_constant_range : push_constants_data_) {
+        DispatchCmdPushConstants(cmd_buffer_, push_constant_range.layout, push_constant_range.stage_flags,
+                                 push_constant_range.offset, static_cast<uint32_t>(push_constant_range.values.size()),
+                                 push_constant_range.values.data());
+    }
+}
+
+void ValidationPipeline::Destroy() {
+    device_ = VK_NULL_HANDLE;
+
+    if (pipeline_layout_ != VK_NULL_HANDLE) {
+        DispatchDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
+        pipeline_layout_ = VK_NULL_HANDLE;
+    }
+
+    if (shader_object_ != VK_NULL_HANDLE) {
+        DispatchDestroyShaderEXT(device_, shader_object_, nullptr);
+        shader_object_ = VK_NULL_HANDLE;
+    }
+
+    if (shader_module_ != VK_NULL_HANDLE) {
+        DispatchDestroyShaderModule(device_, shader_module_, nullptr);
+        shader_module_ = VK_NULL_HANDLE;
+    }
+
+    if (pipeline_ != VK_NULL_HANDLE) {
+        DispatchDestroyPipeline(device_, pipeline_, nullptr);
+        pipeline_ = VK_NULL_HANDLE;
+    }
+}
+
+void ValidationPipeline::SetDescriptorSetLayouts(uint32_t set_layout_count, const VkDescriptorSetLayout *set_layouts) {
+    pipeline_layout_ci_.setLayoutCount = set_layout_count;
+    pipeline_layout_ci_.pSetLayouts = set_layouts;
+}
+
+void ValidationPipeline::SetPushConstantRanges(uint32_t ranges_count, const VkPushConstantRange *ranges) {
+    pipeline_layout_ci_.pushConstantRangeCount = ranges_count;
+    pipeline_layout_ci_.pPushConstantRanges = ranges;
+}
+
+void ValidationPipeline::SetComputeShader(bool uses_shader_object, size_t code_dwords_count, const uint32_t *code) {
+    SetShader(uses_shader_object, VK_SHADER_STAGE_COMPUTE_BIT, code_dwords_count, code);
+}
+
+void ValidationPipeline::SetVertexShader(bool uses_shader_object, size_t code_dwords_count, const uint32_t *code) {
+    SetShader(uses_shader_object, VK_SHADER_STAGE_VERTEX_BIT, code_dwords_count, code);
+}
+
+bool ValidationPipeline::BuildOnlyLayoutAndShader(Validator &gpuav, const Location &loc) {
+    assert(device_ == VK_NULL_HANDLE);
+    device_ = gpuav.device;
+    assert(pipeline_layout_ == VK_NULL_HANDLE);
+    VkResult result = DispatchCreatePipelineLayout(gpuav.device, &pipeline_layout_ci_, nullptr, &pipeline_layout_);
+    if (result != VK_SUCCESS) {
+        gpuav.InternalError(gpuav.device, loc,
+                            "Unable to create pipeline layout for SharedDrawValidationResources. Aborting GPU-AV.");
+        return false;
+    }
+
+    const bool uses_shader_object = shader_object_ci_.codeSize != 0;
+    if (uses_shader_object) {
+        shader_object_ci_.setLayoutCount = pipeline_layout_ci_.setLayoutCount;
+        shader_object_ci_.pSetLayouts = pipeline_layout_ci_.pSetLayouts;
+        shader_object_ci_.pushConstantRangeCount = pipeline_layout_ci_.pushConstantRangeCount;
+        shader_object_ci_.pPushConstantRanges = pipeline_layout_ci_.pPushConstantRanges;
+        result = DispatchCreateShadersEXT(gpuav.device, 1u, &shader_object_ci_, nullptr, &shader_object_);
+        if (result != VK_SUCCESS) {
+            gpuav.InternalError(gpuav.device, loc, "Unable to create shader object. Aborting GPU-AV.");
+            return false;
+        }
+    } else {
+        result = DispatchCreateShaderModule(gpuav.device, &shader_module_ci_, nullptr, &shader_module_);
+        if (result != VK_SUCCESS) {
+            gpuav.InternalError(gpuav.device, loc, "Unable to create shader module. Aborting GPU-AV.");
+            return false;
+        }
+
+        VkPipelineShaderStageCreateInfo pipeline_stage_ci = vku::InitStructHelper();
+        pipeline_stage_ci.stage = shader_stage_;
+        pipeline_stage_ci.module = shader_module_;
+        pipeline_stage_ci.pName = "main";
+
+        VkComputePipelineCreateInfo pipeline_ci = vku::InitStructHelper();
+        pipeline_ci.stage = pipeline_stage_ci;
+        pipeline_ci.layout = pipeline_layout_;
+    }
+
+    return true;
+}
+
+bool ValidationPipeline::BuildPipeline(Validator &gpuav, const Location &loc) {
+    const bool uses_shader_object = shader_object_ci_.codeSize != 0;
+
+    if (uses_shader_object) {
+        return true;
+    }
+
+    VkResult result = DispatchCreateShaderModule(gpuav.device, &shader_module_ci_, nullptr, &shader_module_);
+    if (result != VK_SUCCESS) {
+        gpuav.InternalError(gpuav.device, loc, "Unable to create shader module. Aborting GPU-AV.");
+        return false;
+    }
+
+    if (shader_stage_ == VK_SHADER_STAGE_COMPUTE_BIT) {
+        VkPipelineShaderStageCreateInfo pipeline_stage_ci = vku::InitStructHelper();
+        pipeline_stage_ci.stage = shader_stage_;
+        pipeline_stage_ci.module = shader_module_;
+        pipeline_stage_ci.pName = "main";
+
+        VkComputePipelineCreateInfo pipeline_ci = vku::InitStructHelper();
+        pipeline_ci.stage = pipeline_stage_ci;
+        pipeline_ci.layout = pipeline_layout_;
+        pipeline_ci.stage = pipeline_stage_ci;
+
+        result = DispatchCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &pipeline_ci, nullptr, &pipeline_);
+    } else if (shader_stage_ == VK_SHADER_STAGE_VERTEX_BIT) {
+        // #ARNO_TODO ValidationPipeline::BuildPipeline for graphics pipeline
+        assert(false);
+    }
+
+    DispatchDestroyShaderModule(gpuav.device, shader_module_, nullptr);
+    shader_module_ = VK_NULL_HANDLE;
+
+    if (result != VK_SUCCESS) {
+        gpuav.InternalError(gpuav.device, loc, "Failed to create pipeline. Aborting GPU-AV.");
+        return false;
+    }
+
+    return true;
+}
+
+void ValidationPipeline::Bind(VkCommandBuffer cmd_buffer) const {
+    const bool uses_shader_object = shader_object_ci_.codeSize != 0;
+
+    if (uses_shader_object) {
+        VkShaderStageFlagBits stage = shader_stage_;
+        DispatchCmdBindShadersEXT(cmd_buffer, 1u, &stage, &shader_object_);
+    } else {
+        VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_MAX_ENUM;
+        if (shader_stage_ == VK_SHADER_STAGE_COMPUTE_BIT) {
+            bind_point = VK_PIPELINE_BIND_POINT_COMPUTE;
+        } else if (shader_stage_ == VK_SHADER_STAGE_VERTEX_BIT) {
+            bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        } else if (shader_stage_ == VK_SHADER_STAGE_RAYGEN_BIT_KHR) {
+            bind_point = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
+        }
+
+        DispatchCmdBindPipeline(cmd_buffer, bind_point, pipeline_);
+    }
+}
+
+void ValidationPipeline::SetShader(bool uses_shader_object, VkShaderStageFlagBits shader_stage, size_t code_dwords_count,
+                                   const uint32_t *code) {
+    assert(device_ == VK_NULL_HANDLE && "limitation: can only set one shader, and once");
+    shader_stage_ = shader_stage;
+
+    if (uses_shader_object) {
+        shader_object_ci_.stage = shader_stage;
+        shader_object_ci_.codeType = VK_SHADER_CODE_TYPE_SPIRV_EXT;
+        shader_object_ci_.codeSize = code_dwords_count * sizeof(uint32_t);
+        shader_object_ci_.pCode = code;
+        shader_object_ci_.pName = "main";
+    } else {
+        shader_module_ci_.codeSize = code_dwords_count * sizeof(uint32_t);
+        shader_module_ci_.pCode = code;
+    }
 }
 
 }  // namespace gpuav

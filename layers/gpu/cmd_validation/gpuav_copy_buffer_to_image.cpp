@@ -53,6 +53,7 @@ struct SharedCopyBufferToImageValidationResources final {
         buffer_info.size = 4096;  // Dummy value
         buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
         VmaAllocationCreateInfo alloc_info = {};
+        alloc_info.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
         alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
         uint32_t mem_type_index = 0;
@@ -65,7 +66,7 @@ struct SharedCopyBufferToImageValidationResources final {
         result = vmaCreatePool(vma_allocator, &pool_create_info, &copy_regions_pool);
         if (result != VK_SUCCESS) {
             gpuav.InternalError(device, loc,
-                                "Unable to create VMA memory pool for buffer to image copies validation. Aborting GPU-AV.");
+                                "Unable to create VMA memory pool for buffer used in image copies validation. Aborting GPU-AV.");
             return;
         }
 
@@ -204,9 +205,6 @@ void InsertCopyBufferToImageValidation(Validator &gpuav, const Location &loc, Vk
         buffer_info.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
         VmaAllocationCreateInfo alloc_info = {};
         alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
-        uint32_t mem_type_index = 0;
-        vmaFindMemoryTypeIndexForBufferInfo(gpuav.vma_allocator_, &buffer_info, &alloc_info, &mem_type_index);
 
         alloc_info.pool = shared_copy_validation_resources.copy_regions_pool;
         VkResult result = vmaCreateBuffer(gpuav.vma_allocator_, &buffer_info, &alloc_info, &copy_src_regions_mem_block.buffer,

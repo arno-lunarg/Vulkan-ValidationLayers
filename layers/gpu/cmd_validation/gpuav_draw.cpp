@@ -61,7 +61,7 @@ struct SharedDrawValidationResources final {
         push_constant_range.offset = 0;
         push_constant_range.size = kPushConstantDWords * sizeof(uint32_t);
 
-        std::array<VkDescriptorSetLayout, 2> set_layouts = {{error_output_desc_set_layout, ds_layout}};
+        std::array set_layouts = {error_output_desc_set_layout, ds_layout};
         VkPipelineLayoutCreateInfo pipeline_layout_ci = vku::InitStructHelper();
         pipeline_layout_ci.pushConstantRangeCount = 1;
         pipeline_layout_ci.pPushConstantRanges = &push_constant_range;
@@ -356,8 +356,10 @@ void InsertIndirectDrawValidation(Validator &gpuav, const Location &loc, VkComma
     static_assert(sizeof(push_constants) <= 128, "push_constants buffer size >128, need to consider maxPushConstantsSize.");
     DispatchCmdPushConstants(cmd_buffer, shared_draw_resources.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
                              static_cast<uint32_t>(sizeof(push_constants)), push_constants);
+
     BindValidationCmdsCommonDescSet(cb_state, VK_PIPELINE_BIND_POINT_GRAPHICS, shared_draw_resources.pipeline_layout,
                                     cb_state->draw_index, static_cast<uint32_t>(cb_state->per_command_error_loggers.size()));
+
     DispatchCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shared_draw_resources.pipeline_layout,
                                   glsl::kDiagPerCmdDescriptorSet, 1, &draw_validation_desc_set, 0, nullptr);
     DispatchCmdDraw(cmd_buffer, 3, 1, 0, 0);  // TODO: this 3 assumes triangles I think, probably could be 1?

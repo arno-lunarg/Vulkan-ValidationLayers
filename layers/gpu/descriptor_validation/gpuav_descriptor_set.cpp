@@ -93,6 +93,7 @@ VkDeviceAddress DescriptorSet::GetLayoutState() {
     buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
     VmaAllocationCreateInfo alloc_info{};
+    // // #ARNO_TODO For layout_.buffer: need to have a pool, or define .usage
     alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
     VkResult result =
         vmaCreateBuffer(gv_dev->vma_allocator_, &buffer_info, &alloc_info, &layout_.buffer, &layout_.allocation, nullptr);
@@ -311,6 +312,7 @@ std::shared_ptr<DescriptorSet::State> DescriptorSet::GetCurrentState() {
     // The descriptor state buffer can be very large (4mb+ in some games). Allocating it as HOST_CACHED
     // and manually flushing it at the end of the state updates is faster than using HOST_COHERENT.
     VmaAllocationCreateInfo alloc_info{};
+    // #ARNO_TODO For next_state->buffer: need to have a pool, or define .usage
     alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
     VkResult result =
         vmaCreateBuffer(next_state->allocator, &buffer_info, &alloc_info, &next_state->buffer, &next_state->allocation, nullptr);
@@ -409,6 +411,7 @@ std::shared_ptr<DescriptorSet::State> DescriptorSet::GetOutputState(Validator &g
     // The descriptor state buffer can be very large (4mb+ in some games). Allocating it as HOST_CACHED
     // and manually flushing it at the end of the state updates is faster than using HOST_COHERENT.
     VmaAllocationCreateInfo alloc_info{};
+    // #ARNO_TODO For next_state->buffer: need to have a pool, or define .usage
     alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
     VkResult result =
         vmaCreateBuffer(next_state->allocator, &buffer_info, &alloc_info, &next_state->buffer, &next_state->allocation, nullptr);
@@ -513,6 +516,7 @@ DescriptorHeap::DescriptorHeap(Validator &gpu_dev, uint32_t max_descriptors)
     buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_KHR;
 
     VmaAllocationCreateInfo alloc_info{};
+    // #ARNO_TODO For DescriptorHeap::buffer_: need to have a pool, or define .usage
     alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     [[maybe_unused]] VkResult result;
     result = vmaCreateBuffer(allocator_, &buffer_info, &alloc_info, &buffer_, &allocation_, nullptr);

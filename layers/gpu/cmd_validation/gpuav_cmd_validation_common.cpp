@@ -22,9 +22,6 @@
 #include "gpu/resources/gpu_resources.h"
 #include "gpu/shaders/gpu_shaders_constants.h"
 
-#include "state_tracker/descriptor_sets.h"
-#include "state_tracker/shader_object_state.h"
-
 namespace gpuav {
 
 void BindValidationCmdsCommonDescSet(const LockedSharedPtr<CommandBuffer, WriteLockGuard> &cmd_buffer_state,
@@ -37,84 +34,6 @@ void BindValidationCmdsCommonDescSet(const LockedSharedPtr<CommandBuffer, WriteL
     DispatchCmdBindDescriptorSets(cmd_buffer_state->VkHandle(), bind_point, pipeline_layout, glsl::kDiagCommonDescriptorSet, 1,
                                   &cmd_buffer_state->GetValidationCmdCommonDescriptorSet(),
                                   static_cast<uint32_t>(dynamic_offsets.size()), dynamic_offsets.data());
-}
-
-void RestorablePipelineState::Create(vvl::CommandBuffer &cb_state, VkPipelineBindPoint bind_point) {
-    cmd_buffer_ = cb_state.VkHandle();
-    pipeline_bind_point_ = bind_point;
-    const auto lv_bind_point = ConvertToLvlBindPoint(bind_point);
-
-    LastBound &last_bound = cb_state.lastBound[lv_bind_point];
-    if (last_bound.pipeline_state) {
-        pipeline_ = last_bound.pipeline_state->VkHandle();
-
-    } else {
-        assert(shader_objects_.empty());
-        if (lv_bind_point == BindPoint_Graphics) {
-            shader_objects_ = last_bound.GetAllBoundGraphicsShaders();
-        } else if (lv_bind_point == BindPoint_Compute) {
-            auto compute_shader = last_bound.GetShaderState(ShaderObjectStage::COMPUTE);
-            if (compute_shader) {
-                shader_objects_.emplace_back(compute_shader);
-            }
-        }
-    }
-
-    desc_set_pipeline_layout_ = last_bound.desc_set_pipeline_layout;
-
-    push_constants_data_ = cb_state.push_constant_data_chunks;
-
-    descriptor_sets_.reserve(last_bound.per_set.size());
-    for (std::size_t i = 0; i < last_bound.per_set.size(); i++) {
-        const auto &bound_descriptor_set = last_bound.per_set[i].bound_descriptor_set;
-        if (bound_descriptor_set) {
-            descriptor_sets_.push_back(std::make_pair(bound_descriptor_set->VkHandle(), static_cast<uint32_t>(i)));
-            if (bound_descriptor_set->IsPushDescriptor()) {
-                push_descriptor_set_index_ = static_cast<uint32_t>(i);
-            }
-            dynamic_offsets_.push_back(last_bound.per_set[i].dynamicOffsets);
-        }
-    }
-
-    if (last_bound.push_descriptor_set) {
-        push_descriptor_set_writes_ = last_bound.push_descriptor_set->GetWrites();
-    }
-}
-
-void RestorablePipelineState::Restore() const {
-    if (pipeline_ != VK_NULL_HANDLE) {
-        DispatchCmdBindPipeline(cmd_buffer_, pipeline_bind_point_, pipeline_);
-    }
-    if (!shader_objects_.empty()) {
-        std::vector<VkShaderStageFlagBits> stages;
-        std::vector<VkShaderEXT> shaders;
-        for (const vvl::ShaderObject *shader_obj : shader_objects_) {
-            stages.emplace_back(shader_obj->create_info.stage);
-            shaders.emplace_back(shader_obj->VkHandle());
-        }
-        DispatchCmdBindShadersEXT(cmd_buffer_, static_cast<uint32_t>(shader_objects_.size()), stages.data(), shaders.data());
-    }
-
-    for (std::size_t i = 0; i < descriptor_sets_.size(); i++) {
-        VkDescriptorSet descriptor_set = descriptor_sets_[i].first;
-        if (descriptor_set != VK_NULL_HANDLE) {
-            DispatchCmdBindDescriptorSets(cmd_buffer_, pipeline_bind_point_, desc_set_pipeline_layout_, descriptor_sets_[i].second,
-                                          1, &descriptor_set, static_cast<uint32_t>(dynamic_offsets_[i].size()),
-                                          dynamic_offsets_[i].data());
-        }
-    }
-
-    if (!push_descriptor_set_writes_.empty()) {
-        DispatchCmdPushDescriptorSetKHR(cmd_buffer_, pipeline_bind_point_, desc_set_pipeline_layout_, push_descriptor_set_index_,
-                                        static_cast<uint32_t>(push_descriptor_set_writes_.size()),
-                                        reinterpret_cast<const VkWriteDescriptorSet *>(push_descriptor_set_writes_.data()));
-    }
-
-    for (const auto &push_constant_range : push_constants_data_) {
-        DispatchCmdPushConstants(cmd_buffer_, push_constant_range.layout, push_constant_range.stage_flags,
-                                 push_constant_range.offset, static_cast<uint32_t>(push_constant_range.values.size()),
-                                 push_constant_range.values.data());
-    }
 }
 
 VkDeviceAddress GetBufferDeviceAddress(Validator &gpuav, VkBuffer buffer, const Location &loc) {

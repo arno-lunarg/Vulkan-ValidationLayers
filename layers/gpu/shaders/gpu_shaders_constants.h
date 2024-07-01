@@ -51,7 +51,7 @@ const int kInstDefaultDescriptorSet = 7;
 // must reserve its own binding slot
 const int kBindingInstErrorBuffer = 0;
 const int kBindingInstBindlessDescriptor = 1;
-const int kBindingInstBufferDeviceAddress = 2;
+const int kBindingInstAccessedBufferDeviceAddresses = 2;
 const int kBindingInstActionIndex = 3;
 const int kBindingInstCmdResourceIndex = 4;
 const int kBindingInstCmdErrorsCount = 5;

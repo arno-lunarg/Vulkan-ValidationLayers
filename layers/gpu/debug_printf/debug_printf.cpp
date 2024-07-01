@@ -654,6 +654,8 @@ void Validator::AllocateDebugPrintfResources(const VkCommandBuffer cmd_buffer, c
     buffer_info.size = printf_settings.buffer_size;
     buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     VmaAllocationCreateInfo alloc_info = {};
+    // alloc_info.pool = output_buffer_pool_; // #ARNO_TODO DebugPrintf: need to allocate output_buffer_pool_. If not doing in base
+    // class, move output_buffer_pool_ to children classes
     alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     result = vmaCreateBuffer(vma_allocator_, &buffer_info, &alloc_info, &output_block.buffer, &output_block.allocation, nullptr);
     if (result != VK_SUCCESS) {

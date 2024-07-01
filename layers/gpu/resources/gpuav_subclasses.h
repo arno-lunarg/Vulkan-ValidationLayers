@@ -102,8 +102,6 @@ class CommandBuffer : public gpu_tracker::CommandBuffer {
         return validation_cmd_desc_set_layout_;
     }
 
-    uint32_t GetValidationErrorBufferDescSetIndex() const { return 0; }
-
     const VkBuffer &GetErrorOutputBuffer() const {
         assert(error_output_buffer_.buffer != VK_NULL_HANDLE);
         return error_output_buffer_.buffer;
@@ -123,6 +121,8 @@ class CommandBuffer : public gpu_tracker::CommandBuffer {
     void Destroy() final;
     void Reset() final;
 
+    // Manage resources that should live as long at the command buffer.
+    // They will be destroyed along with the command buffer.
     gpu::GpuResourcesManager gpu_resources_manager;
     // Using stdext::inplace_function over std::function to allocate memory in place
     using ErrorLoggerFunc =
@@ -135,7 +135,7 @@ class CommandBuffer : public gpu_tracker::CommandBuffer {
     bool NeedsPostProcess();
 
     VkDeviceSize GetBdaRangesBufferByteSize() const;
-    [[nodiscard]] bool UpdateBdaRangesBuffer();
+    [[nodiscard]] bool UpdateBufferDeviceAddressRangesBuffer();
 
     Validator &state_;
 
@@ -232,6 +232,78 @@ class AccelerationStructureNV : public vvl::AccelerationStructureNV {
 
     DescriptorHeap &desc_heap;
     const DescriptorId id;
+};
+
+class RestorablePipelineState {
+  public:
+    RestorablePipelineState(vvl::CommandBuffer &cb_state, VkPipelineBindPoint bind_point) { Create(cb_state, bind_point); }
+    ~RestorablePipelineState() { Restore(); }
+
+  private:
+    void Create(vvl::CommandBuffer &cb_state, VkPipelineBindPoint bind_point);
+    void Restore() const;
+
+    VkCommandBuffer cmd_buffer_;
+    VkPipelineBindPoint pipeline_bind_point_ = VK_PIPELINE_BIND_POINT_MAX_ENUM;
+    VkPipeline pipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout desc_set_pipeline_layout_ = VK_NULL_HANDLE;
+    std::vector<std::pair<VkDescriptorSet, uint32_t>> descriptor_sets_;
+    std::vector<std::vector<uint32_t>> dynamic_offsets_;
+    uint32_t push_descriptor_set_index_ = 0;
+    std::vector<vku::safe_VkWriteDescriptorSet> push_descriptor_set_writes_;
+    std::vector<vvl::CommandBuffer::PushConstantData> push_constants_data_;
+    std::vector<vvl::ShaderObject *> shader_objects_;
+};
+
+class ValidationPipeline {
+  public:
+    ValidationPipeline() = default;
+    ValidationPipeline(const ValidationPipeline &) = default;
+    ValidationPipeline &operator=(const ValidationPipeline &) = default;
+    ValidationPipeline &operator=(ValidationPipeline &&) = default;
+    ~ValidationPipeline() { Destroy(); }
+    void Destroy();
+
+    // Will not deep copy!
+    void SetDescriptorSetLayouts(uint32_t set_layout_count, const VkDescriptorSetLayout *set_layouts);
+    // Will not deep copy!
+    void SetPushConstantRanges(uint32_t ranges_count, const VkPushConstantRange *ranges);
+    void SetComputeShader(bool uses_shader_object, size_t code_dwords_count, const uint32_t *code);
+    void SetVertexShader(bool uses_shader_object, size_t code_dwords_count, const uint32_t *code);
+    void SetRayGenerationShader(Validator &gpuav, bool uses_shader_object, size_t code_dwords_count, const uint32_t *code,
+                                const Location &loc);
+
+    // will be needed in cmd_draw/dispatch... files
+    bool BuildOnlyLayoutAndShader(Validator &gpuav, const Location &loc);
+    bool BuildPipeline(Validator &gpuav, const Location &loc);
+    void Bind(VkCommandBuffer cmd_buffer) const;
+
+    VkShaderModule GetShaderModule() const {
+        assert(shader_module_ != VK_NULL_HANDLE);
+        return shader_module_;
+    }
+    VkPipelineLayout GetPipelineLayout() const {
+        assert(pipeline_layout_ != VK_NULL_HANDLE);
+        return pipeline_layout_;
+    }
+
+  private:
+    [[nodiscard]] void SetShader(bool uses_shader_object, VkShaderStageFlagBits shader_stage, size_t code_dwords_count,
+                                 const uint32_t *code);
+
+    VkDevice device_ = VK_NULL_HANDLE;
+
+    VkPipelineLayoutCreateInfo pipeline_layout_ci_ = vku::InitStructHelper();
+    VkPipelineLayout pipeline_layout_ = VK_NULL_HANDLE;
+
+    VkShaderStageFlagBits shader_stage_ = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
+
+    VkShaderCreateInfoEXT shader_object_ci_ = vku::InitStructHelper();
+    VkShaderEXT shader_object_ = VK_NULL_HANDLE;
+
+    VkShaderModuleCreateInfo shader_module_ci_ = vku::InitStructHelper();
+    VkShaderModule shader_module_ = VK_NULL_HANDLE;
+    VkPipeline pipeline_ = VK_NULL_HANDLE;
 };
 
 namespace glsl {

@@ -1,0 +1,145 @@
+// Copyright (c) 2024 The Khronos Group Inc.
+// Copyright (c) 2024 Valve Corporation
+// Copyright (c) 2024 LunarG, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+//#extension GL_EXT_buffer_reference : require
+//#extension GL_EXT_buffer_reference_uvec2 : require
+#if defined(GL_ARB_gpu_shader_int64)
+#extension GL_ARB_gpu_shader_int64 : require
+#else
+#error No extension available for 64-bit integers.
+#endif
+
+#include "gpu_error_header.h"
+#include "gpu_shaders_constants.h"
+#include "common.h"
+
+// Represent a [begin, end) range, where end is one past the last element held in range
+struct Range {
+    uint64_t begin;
+    uint64_t end;
+};
+
+// See gpuav::Validator::UpdateBDABuffer in gpuav.cpp for a description of the table format
+// Ranges are supposed to:
+// 1) be stored from low to high
+// 2) not overlap
+layout(set = kDiagPerCmdDescriptorSet, binding = 0, std430) buffer ValidBufferDeviceAddresses {
+    uint64_t valid_address_ranges_count;
+    Range valid_address_ranges[];
+};
+
+layout(set = kDiagPerCmdDescriptorSet, binding = 1, std430) buffer AccessedBufferDeviceAddresses {
+    int accessed_address_ranges_count;// number of elements to be scanned
+    uint write_i;// unused in this shader
+    uint read_i;
+    uint _pad;
+    uvec4 accessed_address_ranges[];// array
+};
+
+layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// Find out if a single buffer device address is valid
+void main () {
+    const uint tid = gl_GlobalInvocationID.x;
+
+    // Is there work?
+    // ---
+    const int size = atomicAdd(accessed_address_ranges_count, -1);
+    if (size < 1) {
+        // No work, give back "access token"
+        atomicAdd(accessed_address_ranges_count, 1);
+        return;
+    };
+
+    // Get data
+    // ---
+    const uint uvec4_capacity = accessed_address_ranges.length();
+    const uint read_pos = atomicAdd(read_i, 2u) % uvec4_capacity;
+    // See gpu/shaders/instrumentation/buffer_device_address.comp for packing details
+    const uvec4 pack1 = accessed_address_ranges[read_pos];
+    const uvec4 stage_info = accessed_address_ranges[read_pos + 1];
+
+    const uint64_t addr = uint64_t(pack1[0]) | uint64_t(pack1[1] << 32u);
+    const uint access_byte_size = pack1[2] & 0x7FFFFFFF;
+
+    // Validate address
+    // ---
+    bool valid_address = false;
+    for (uint range_i = 0; range_i < uint(valid_address_ranges_count); ++range_i) {
+        const Range range = valid_address_ranges[range_i];
+        if (addr < range.begin) {
+            // Invalid address, proceed to error logging
+            break;
+        }
+        if ((addr < range.end) && (addr + access_byte_size > range.end)) {
+            // Ranges do not overlap,
+            // so if current range holds addr but not (add + access_byte_size), access is invalid
+            break;
+        }
+        if ((addr + access_byte_size) <= range.end) {
+            // addr >= range.begin && addr + access_byte_size <= range.end
+            // ==> valid access
+            valid_address = true;
+            break;
+        }
+        // Address is above current range, proceed to next range.
+        // If at loop end, address is invalid.
+    }
+
+    if (valid_address) return;
+
+    // addr is invalid, try to print error
+    // ---
+#if 0
+    const uint cmd_id = inst_cmd_resource_index_buffer.index[0];
+    const uint cmd_errors_count = atomicAdd(inst_cmd_errors_count_buffer.errors_count[cmd_id], 1);
+    const bool max_cmd_errors_count_reached = cmd_errors_count >= kMaxErrorsPerCmd;
+
+    if (max_cmd_errors_count_reached) return;
+
+    uint write_pos = atomicAdd(inst_errors_buffer.written_count, kErrorRecordSize);
+    const bool errors_buffer_filled = (write_pos + kErrorRecordSize) > uint(inst_errors_buffer.data.length());
+
+    if (errors_buffer_filled) return; 
+#endif
+
+    if (MaxCmdErrorsCountReached()) return;
+
+    uint write_pos = atomicAdd(errors_count, kErrorRecordSize);
+    const bool errors_buffer_filled = (write_pos + kErrorRecordSize) > errors_buffer.length();
+    if (errors_buffer_filled) return;
+
+    errors_buffer[write_pos + kHeaderErrorRecordSizeOffset] = kErrorRecordSize;
+    errors_buffer[write_pos + kHeaderShaderIdOffset] = kLinkShaderId;
+    errors_buffer[write_pos + kHeaderInstructionIdOffset] = pack1[3];
+    errors_buffer[write_pos + kHeaderStageIdOffset] = stage_info[0];
+    errors_buffer[write_pos + kHeaderStageInfoOffset_0] = stage_info[1];
+    errors_buffer[write_pos + kHeaderStageInfoOffset_1] = stage_info[2];
+    errors_buffer[write_pos + kHeaderStageInfoOffset_2] = stage_info[3];
+
+    errors_buffer[write_pos + kHeaderErrorGroupOffset] = kErrorGroupInstBufferDeviceAddress;
+    errors_buffer[write_pos + kHeaderErrorSubCodeOffset] = kErrorSubCodeBufferDeviceAddressUnallocRef;
+
+	errors_buffer[write_pos + kHeaderActionIdOffset] = action_index[0];
+    errors_buffer[write_pos + kHeaderCommandResourceIdOffset] = resource_index[0];
+
+    errors_buffer[write_pos + kInstBuffAddrUnallocDescPtrLoOffset] = uint(addr);
+    errors_buffer[write_pos + kInstBuffAddrUnallocDescPtrHiOffset] = uint(addr >> 32u);
+    errors_buffer[write_pos + kInstBuffAddrAccessByteSizeOffset] = access_byte_size;
+    errors_buffer[write_pos + kInstBuffAddrAccessInstructionOffset] = pack1[3] & 0x1;    
+}

@@ -336,12 +336,20 @@ void Validator::PreCallRecordCmdDraw(VkCommandBuffer commandBuffer, uint32_t ver
     SetupShaderInstrumentationResources(*this, commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
 }
 
+void Validator::PostCallRecordCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount,
+                                      uint32_t firstVertex, uint32_t firstInstance, const RecordObject &record_obj) {
+    BaseClass::PostCallRecordCmdDraw(commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance, record_obj);
+
+    PostCallSetupShaderInstrumentationResources(*this, commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+}
+
 void Validator::PreCallRecordCmdDrawMultiEXT(VkCommandBuffer commandBuffer, uint32_t drawCount,
                                              const VkMultiDrawInfoEXT *pVertexInfo, uint32_t instanceCount, uint32_t firstInstance,
                                              uint32_t stride, const RecordObject &record_obj) {
     BaseClass::PreCallRecordCmdDrawMultiEXT(commandBuffer, drawCount, pVertexInfo, instanceCount, firstInstance, stride,
                                             record_obj);
     for (uint32_t i = 0; i < drawCount; i++) {
+        // #ARNO_TODO calling Setup drawCount times seems weird...
         SetupShaderInstrumentationResources(*this, commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
     }
 }

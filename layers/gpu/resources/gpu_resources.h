@@ -35,7 +35,7 @@ class DescriptorSetManager {
     DescriptorSetManager(VkDevice device, uint32_t num_bindings_in_set);
     ~DescriptorSetManager();
 
-    VkResult GetDescriptorSet(VkDescriptorPool *out_desc_pool, VkDescriptorSetLayout ds_layout, VkDescriptorSet *out_desc_sets);
+    VkResult GetDescriptorSet(VkDescriptorPool *out_desc_pool, VkDescriptorSetLayout ds_layout, VkDescriptorSet *out_desc_set);
     VkResult GetDescriptorSets(uint32_t count, VkDescriptorPool *out_pool, VkDescriptorSetLayout ds_layout,
                                std::vector<VkDescriptorSet> *out_desc_sets);
     void PutBackDescriptorSet(VkDescriptorPool desc_pool, VkDescriptorSet desc_set);
@@ -63,7 +63,7 @@ struct DeviceMemoryBlock {
             allocation = VK_NULL_HANDLE;
         }
     }
-    bool IsNull() { return buffer == VK_NULL_HANDLE; }
+    bool IsNull() const { return buffer == VK_NULL_HANDLE; }
 };
 
 class GpuResourcesManager {

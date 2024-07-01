@@ -34,12 +34,12 @@ DescriptorSetManager::~DescriptorSetManager() {
 }
 
 VkResult DescriptorSetManager::GetDescriptorSet(VkDescriptorPool *out_desc_pool, VkDescriptorSetLayout ds_layout,
-                                                VkDescriptorSet *out_desc_sets) {
+                                                VkDescriptorSet *out_desc_set) {
     std::vector<VkDescriptorSet> desc_sets;
     VkResult result = GetDescriptorSets(1, out_desc_pool, ds_layout, &desc_sets);
     assert(result == VK_SUCCESS);
     if (result == VK_SUCCESS) {
-        *out_desc_sets = desc_sets[0];
+        *out_desc_set = desc_sets[0];
     }
     return result;
 }

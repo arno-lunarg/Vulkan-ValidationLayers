@@ -28,7 +28,6 @@ constexpr uint32_t kPushConstantDWords = 5u;
 namespace gpuav {
 
 struct SharedTraceRaysValidationResources final {
-    VkDescriptorSetLayout ds_layout = VK_NULL_HANDLE;
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
     VmaPool sbt_pool = VK_NULL_HANDLE;
@@ -122,6 +121,7 @@ struct SharedTraceRaysValidationResources final {
         buffer_info.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR |
                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         VmaAllocationCreateInfo alloc_info = {};
+        alloc_info.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
         alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
         uint32_t mem_type_index = 0;
@@ -173,10 +173,6 @@ struct SharedTraceRaysValidationResources final {
     }
 
     ~SharedTraceRaysValidationResources() {
-        if (ds_layout != VK_NULL_HANDLE) {
-            DispatchDestroyDescriptorSetLayout(device, ds_layout, nullptr);
-            ds_layout = VK_NULL_HANDLE;
-        }
         if (pipeline_layout != VK_NULL_HANDLE) {
             DispatchDestroyPipelineLayout(device, pipeline_layout, nullptr);
             pipeline_layout = VK_NULL_HANDLE;
@@ -198,8 +194,8 @@ struct SharedTraceRaysValidationResources final {
     }
 
     bool IsValid() const {
-        return ds_layout != VK_NULL_HANDLE && pipeline_layout != VK_NULL_HANDLE && pipeline != VK_NULL_HANDLE &&
-               sbt_buffer != VK_NULL_HANDLE && sbt_pool != VK_NULL_HANDLE && device != VK_NULL_HANDLE;
+        return pipeline_layout != VK_NULL_HANDLE && pipeline != VK_NULL_HANDLE && sbt_buffer != VK_NULL_HANDLE &&
+               sbt_pool != VK_NULL_HANDLE && device != VK_NULL_HANDLE;
     }
 };
 

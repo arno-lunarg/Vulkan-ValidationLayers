@@ -18,6 +18,10 @@
 #include "gpu/instrumentation/gpuav_instrumentation.h"
 
 #include "chassis/chassis_modification_state.h"
+#include "generated/instrumentation_buffer_device_address_comp.h"
+#include "generated/cmd_validation_buffer_device_address_validation_comp.h"
+#include "generated/cmd_validation_indirect_buffer_setup_comp.h"
+#include "gpu/cmd_validation/gpuav_cmd_validation_common.h"
 #include "gpu/core/gpuav.h"
 #include "gpu/error_message/gpuav_vuids.h"
 #include "gpu/resources/gpuav_subclasses.h"
@@ -148,7 +152,196 @@ bool Validator::InstrumentShader(const vvl::span<const uint32_t> &input, uint32_
     return true;
 }
 
-void SetupShaderInstrumentationResources(Validator &gpuav, LockedSharedPtr<CommandBuffer, WriteLockGuard> &cmd_buffer,
+struct SharedInstrumentationResources final {
+    Validator &gpuav;
+
+    VmaPool accessed_bda_mem_pool = VK_NULL_HANDLE;
+    gpu::DeviceMemoryBlock accessed_bda_buffer;
+
+    VmaPool indirect_buffer_bda_mem_pool = VK_NULL_HANDLE;
+
+    ValidationPipeline bda_validation_pipeline;
+    VkDescriptorSetLayout bda_validation_desc_set_layout = VK_NULL_HANDLE;
+
+    ValidationPipeline indirect_buffer_setup_pipeline;
+    VkDescriptorSetLayout indirect_buffer_setup_desc_set_layout = VK_NULL_HANDLE;
+
+    bool valid = false;
+
+    SharedInstrumentationResources(Validator &gpuav, VkDescriptorSetLayout error_output_desc_set_layout, bool use_shader_objects,
+                                   const Location &loc)
+        : gpuav(gpuav) {
+        // Accessed buffer device addresses buffer
+        // ---
+        {
+            VkBufferCreateInfo accessed_bda_buffer_ci = vku::InitStructHelper();
+            accessed_bda_buffer_ci.size =
+                (8 * sizeof(uint32_t)) * 32 * 1024 * 1024;  // #ARNO_TODO do not hard code accessed_bda_buffer_ci.size
+            accessed_bda_buffer_ci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+            VmaAllocationCreateInfo alloc_create_info = {};
+            alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+            alloc_create_info.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            uint32_t mem_type_index = 0;
+            VkResult result = vmaFindMemoryTypeIndexForBufferInfo(gpuav.vma_allocator_, &accessed_bda_buffer_ci, &alloc_create_info,
+                                                                  &mem_type_index);
+            if (result != VK_SUCCESS) {
+                gpuav.InternalError(
+                    gpuav.device, loc,
+                    "Unable to find memory type index for accessed buffer device addresses buffer. Aborting GPU-AV.");
+                return;
+            }
+            VmaPoolCreateInfo vma_pool_ci = {};
+            vma_pool_ci.memoryTypeIndex = mem_type_index;
+            vma_pool_ci.blockSize = 0;
+            vma_pool_ci.maxBlockCount = 1;  // #ARNO_TODO do not hard code vma_pool_ci.maxBlockCount
+            if (gpuav.gpuav_settings.vma_linear_output) {
+                vma_pool_ci.flags = VMA_POOL_CREATE_LINEAR_ALGORITHM_BIT;
+            }
+            result = vmaCreatePool(gpuav.vma_allocator_, &vma_pool_ci, &accessed_bda_mem_pool);
+            if (result != VK_SUCCESS) {
+                gpuav.InternalError(
+                    gpuav.device, loc,
+                    "Unable to create VMA memory pool for accessed buffer device addresses buffer. Aborting GPU-AV.");
+                return;
+            }
+            alloc_create_info.pool = accessed_bda_mem_pool;
+
+            result = vmaCreateBuffer(gpuav.vma_allocator_, &accessed_bda_buffer_ci, &alloc_create_info, &accessed_bda_buffer.buffer,
+                                     &accessed_bda_buffer.allocation, nullptr);
+            if (result != VK_SUCCESS) {
+                gpuav.InternalError(gpuav.device, loc,
+                                    "Unable to create accessed buffer device addresses buffer. Aborting GPU-AV.");
+                return;
+            }
+        }
+
+        // Accessed buffer device addresses validation pipeline
+        // ---
+        {
+            const std::array<VkDescriptorSetLayoutBinding, 2> bda_validation_bindings = {
+                {// Valid buffer device addresses
+                 {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+                 // Accessed buffer device addresses
+                 {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}}};
+
+            VkDescriptorSetLayoutCreateInfo bda_validation_desc_set_layout_ci = vku::InitStructHelper();
+            bda_validation_desc_set_layout_ci.bindingCount = static_cast<uint32_t>(bda_validation_bindings.size());
+            bda_validation_desc_set_layout_ci.pBindings = bda_validation_bindings.data();
+
+            VkResult result = DispatchCreateDescriptorSetLayout(gpuav.device, &bda_validation_desc_set_layout_ci, nullptr,
+                                                                &bda_validation_desc_set_layout);
+            if (result != VK_SUCCESS) {
+                gpuav.InternalError(
+                    gpuav.device, loc,
+                    "Could not create descriptor set layout for buffer device address validation pipeline. Aborting GPU-AV.");
+                return;
+            }
+
+            const std::array desc_set_layouts = {error_output_desc_set_layout, bda_validation_desc_set_layout};
+            bda_validation_pipeline.SetDescriptorSetLayouts(static_cast<uint32_t>(desc_set_layouts.size()),
+                                                            desc_set_layouts.data());
+            bda_validation_pipeline.SetComputeShader(use_shader_objects, cmd_validation_buffer_device_address_validation_comp_size,
+                                                     cmd_validation_buffer_device_address_validation_comp);
+            const bool success = bda_validation_pipeline.BuildPipeline(gpuav, loc);
+            if (!success) {
+                return;
+            }
+        }
+
+        // Setup memory pool for buffers holding indirect validation dispatches dimensions
+        // ---
+        {
+            VkBufferCreateInfo indirect_dispatch_buffer_ci = vku::InitStructHelper();
+            indirect_dispatch_buffer_ci.size = 3 * sizeof(uint32_t);
+            indirect_dispatch_buffer_ci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+            VmaAllocationCreateInfo alloc_create_info = {};
+            alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+            alloc_create_info.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            uint32_t mem_type_index = 0;
+            VkResult result = vmaFindMemoryTypeIndexForBufferInfo(gpuav.vma_allocator_, &indirect_dispatch_buffer_ci,
+                                                                  &alloc_create_info, &mem_type_index);
+            if (result != VK_SUCCESS) {
+                gpuav.InternalError(gpuav.device, loc,
+                                    "Unable to find memory type index for indirect buffers used for validation. Aborting GPU-AV.");
+                return;
+            }
+            VmaPoolCreateInfo vma_pool_ci = {};
+            vma_pool_ci.memoryTypeIndex = mem_type_index;
+            vma_pool_ci.blockSize = 0;
+            vma_pool_ci.maxBlockCount = 0;
+            if (gpuav.gpuav_settings.vma_linear_output) {
+                vma_pool_ci.flags = VMA_POOL_CREATE_LINEAR_ALGORITHM_BIT;
+            }
+            result = vmaCreatePool(gpuav.vma_allocator_, &vma_pool_ci, &indirect_buffer_bda_mem_pool);
+            if (result != VK_SUCCESS) {
+                gpuav.InternalError(gpuav.device, loc,
+                                    "Unable to create VMA memory pool for indirect buffers used for validation. Aborting GPU-AV.");
+                return;
+            }
+        }
+
+        // Pipeline to setup buffers holding indirect validation dispatches dimensions
+        // ---
+        {
+            const std::array<VkDescriptorSetLayoutBinding, 2> bda_validation_bindings = {
+                {// Accessed buffer device addresses
+                 {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+                 // Indirect buffer to setup
+                 {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}}};
+
+            VkDescriptorSetLayoutCreateInfo indirect_buffer_setup_desc_layout_ci = vku::InitStructHelper();
+            indirect_buffer_setup_desc_layout_ci.bindingCount = static_cast<uint32_t>(bda_validation_bindings.size());
+            indirect_buffer_setup_desc_layout_ci.pBindings = bda_validation_bindings.data();
+
+            VkResult result = DispatchCreateDescriptorSetLayout(gpuav.device, &indirect_buffer_setup_desc_layout_ci, nullptr,
+                                                                &indirect_buffer_setup_desc_set_layout);
+            if (result != VK_SUCCESS) {
+                gpuav.InternalError(gpuav.device, loc,
+                                    "Could not create descriptor set layout for indirect buffer setup pipeline. Aborting GPU-AV.");
+                return;
+            }
+
+            indirect_buffer_setup_pipeline.SetDescriptorSetLayouts(1, &indirect_buffer_setup_desc_set_layout);
+            indirect_buffer_setup_pipeline.SetComputeShader(use_shader_objects, cmd_validation_indirect_buffer_setup_comp_size,
+                                                            cmd_validation_indirect_buffer_setup_comp);
+            const bool success = indirect_buffer_setup_pipeline.BuildPipeline(gpuav, loc);
+            if (!success) {
+                return;
+            }
+        }
+
+        valid = true;
+    }
+
+    ~SharedInstrumentationResources() {
+        valid = false;
+
+        accessed_bda_buffer.Destroy(gpuav.vma_allocator_);
+        if (accessed_bda_mem_pool != VK_NULL_HANDLE) {
+            vmaDestroyPool(gpuav.vma_allocator_, accessed_bda_mem_pool);
+            accessed_bda_mem_pool = VK_NULL_HANDLE;
+        }
+        if (indirect_buffer_bda_mem_pool != VK_NULL_HANDLE) {
+            vmaDestroyPool(gpuav.vma_allocator_, indirect_buffer_bda_mem_pool);
+            indirect_buffer_bda_mem_pool = VK_NULL_HANDLE;
+        }
+        bda_validation_pipeline.Destroy();
+        if (bda_validation_desc_set_layout != VK_NULL_HANDLE) {
+            DispatchDestroyDescriptorSetLayout(gpuav.device, bda_validation_desc_set_layout, nullptr);
+            bda_validation_desc_set_layout = VK_NULL_HANDLE;
+        }
+
+        indirect_buffer_setup_pipeline.Destroy();
+        if (indirect_buffer_setup_desc_set_layout != VK_NULL_HANDLE) {
+            DispatchDestroyDescriptorSetLayout(gpuav.device, indirect_buffer_setup_desc_set_layout, nullptr);
+            indirect_buffer_setup_desc_set_layout = VK_NULL_HANDLE;
+        }
+    }
+
+    bool IsValid() const { return valid; }
+};
+
+void SetupShaderInstrumentationResources(Validator &gpuav, LockedSharedPtr<CommandBuffer, WriteLockGuard> &cb_state,
                                          VkPipelineBindPoint bind_point, const Location &loc) {
     if (bind_point != VK_PIPELINE_BIND_POINT_GRAPHICS && bind_point != VK_PIPELINE_BIND_POINT_COMPUTE &&
         bind_point != VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) {
@@ -157,19 +350,19 @@ void SetupShaderInstrumentationResources(Validator &gpuav, LockedSharedPtr<Comma
     }
 
     const auto lv_bind_point = ConvertToLvlBindPoint(bind_point);
-    auto const &last_bound = cmd_buffer->lastBound[lv_bind_point];
+    const auto &last_bound = cb_state->lastBound[lv_bind_point];
     const auto *pipeline_state = last_bound.pipeline_state;
 
     if (!pipeline_state && !last_bound.HasShaderObjects()) {
-        gpuav.InternalError(cmd_buffer->VkHandle(), loc,
+        gpuav.InternalError(cb_state->VkHandle(), loc,
                             "Neither pipeline state nor shader object states were found. Aborting GPU-AV.");
         return;
     }
 
     VkDescriptorSet instrumentation_desc_set =
-        cmd_buffer->gpu_resources_manager.GetManagedDescriptorSet(cmd_buffer->GetInstrumentationDescriptorSetLayout());
+        cb_state->gpu_resources_manager.GetManagedDescriptorSet(cb_state->GetInstrumentationDescriptorSetLayout());
     if (!instrumentation_desc_set) {
-        gpuav.InternalError(cmd_buffer->VkHandle(), loc, "Unable to allocate instrumentation descriptor sets. Aborting GPU-AV.");
+        gpuav.InternalError(cb_state->VkHandle(), loc, "Unable to allocate instrumentation descriptor sets. Aborting GPU-AV.");
         return;
     }
 
@@ -177,37 +370,37 @@ void SetupShaderInstrumentationResources(Validator &gpuav, LockedSharedPtr<Comma
     {
         // Pathetic way of trying to make sure we take care of updating all
         // bindings of the instrumentation descriptor set
-        assert(gpuav.instrumentation_bindings_.size() == 6);
+        assert(gpuav.instrumentation_bindings_.size() == 7);
         std::vector<VkWriteDescriptorSet> desc_writes = {};
 
         // Error output buffer
-        VkDescriptorBufferInfo error_output_desc_buffer_info = {};
+        VkDescriptorBufferInfo error_output_dbi = {};
         {
-            error_output_desc_buffer_info.range = VK_WHOLE_SIZE;
-            error_output_desc_buffer_info.buffer = cmd_buffer->GetErrorOutputBuffer();
-            error_output_desc_buffer_info.offset = 0;
+            error_output_dbi.range = VK_WHOLE_SIZE;
+            error_output_dbi.buffer = cb_state->GetErrorOutputBuffer();
+            error_output_dbi.offset = 0;
 
             VkWriteDescriptorSet wds = vku::InitStructHelper();
             wds.dstBinding = glsl::kBindingInstErrorBuffer;
             wds.descriptorCount = 1;
             wds.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            wds.pBufferInfo = &error_output_desc_buffer_info;
+            wds.pBufferInfo = &error_output_dbi;
             wds.dstSet = instrumentation_desc_set;
             desc_writes.emplace_back(wds);
         }
 
         // Buffer holding action command index in command buffer
-        VkDescriptorBufferInfo indices_desc_buffer_info = {};
+        VkDescriptorBufferInfo indices_dbi = {};
         {
-            indices_desc_buffer_info.range = sizeof(uint32_t);
-            indices_desc_buffer_info.buffer = gpuav.indices_buffer_.buffer;
-            indices_desc_buffer_info.offset = 0;
+            indices_dbi.range = sizeof(uint32_t);
+            indices_dbi.buffer = gpuav.indices_buffer_.buffer;
+            indices_dbi.offset = 0;
 
             VkWriteDescriptorSet wds = vku::InitStructHelper();
             wds.dstBinding = glsl::kBindingInstActionIndex;
             wds.descriptorCount = 1;
             wds.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
-            wds.pBufferInfo = &indices_desc_buffer_info;
+            wds.pBufferInfo = &indices_dbi;
             wds.dstSet = instrumentation_desc_set;
             desc_writes.emplace_back(wds);
         }
@@ -218,56 +411,63 @@ void SetupShaderInstrumentationResources(Validator &gpuav, LockedSharedPtr<Comma
             wds.dstBinding = glsl::kBindingInstCmdResourceIndex;
             wds.descriptorCount = 1;
             wds.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
-            wds.pBufferInfo = &indices_desc_buffer_info;
+            wds.pBufferInfo = &indices_dbi;
             wds.dstSet = instrumentation_desc_set;
             desc_writes.emplace_back(wds);
         }
 
         // Errors count buffer
-        VkDescriptorBufferInfo cmd_errors_counts_desc_buffer_info = {};
+        VkDescriptorBufferInfo cmd_errors_counts_dbi = {};
         {
-            cmd_errors_counts_desc_buffer_info.range = VK_WHOLE_SIZE;
-            cmd_errors_counts_desc_buffer_info.buffer = cmd_buffer->GetCmdErrorsCountsBuffer();
-            cmd_errors_counts_desc_buffer_info.offset = 0;
+            cmd_errors_counts_dbi.range = VK_WHOLE_SIZE;
+            cmd_errors_counts_dbi.buffer = cb_state->GetCmdErrorsCountsBuffer();
+            cmd_errors_counts_dbi.offset = 0;
 
             VkWriteDescriptorSet wds = vku::InitStructHelper();
             wds.dstBinding = glsl::kBindingInstCmdErrorsCount;
             wds.descriptorCount = 1;
             wds.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            wds.pBufferInfo = &cmd_errors_counts_desc_buffer_info;
+            wds.pBufferInfo = &cmd_errors_counts_dbi;
             wds.dstSet = instrumentation_desc_set;
             desc_writes.emplace_back(wds);
         }
 
         // Current bindless buffer
-        VkDescriptorBufferInfo di_input_desc_buffer_info = {};
-        if (cmd_buffer->current_bindless_buffer != VK_NULL_HANDLE) {
-            di_input_desc_buffer_info.range = VK_WHOLE_SIZE;
-            di_input_desc_buffer_info.buffer = cmd_buffer->current_bindless_buffer;
-            di_input_desc_buffer_info.offset = 0;
+        VkDescriptorBufferInfo bindless_buffer_dbi = {};
+        if (cb_state->current_bindless_buffer != VK_NULL_HANDLE) {
+            bindless_buffer_dbi.range = VK_WHOLE_SIZE;
+            bindless_buffer_dbi.buffer = cb_state->current_bindless_buffer;
+            bindless_buffer_dbi.offset = 0;
 
             VkWriteDescriptorSet wds = vku::InitStructHelper();
             wds.dstBinding = glsl::kBindingInstBindlessDescriptor;
             wds.descriptorCount = 1;
             wds.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            wds.pBufferInfo = &di_input_desc_buffer_info;
+            wds.pBufferInfo = &bindless_buffer_dbi;
             wds.dstSet = instrumentation_desc_set;
             desc_writes.emplace_back(wds);
         }
 
-        // BDA snapshot buffer
-        VkDescriptorBufferInfo bda_input_desc_buffer_info = {};
+        // Indirect validation dispatches dimensions
+        VkDescriptorBufferInfo accessed_bda_ranges_dbi = {};
         if (gpuav.bda_validation_possible) {
-            bda_input_desc_buffer_info.range = VK_WHOLE_SIZE;
-            bda_input_desc_buffer_info.buffer = cmd_buffer->GetBdaRangesSnapshot().buffer;
-            bda_input_desc_buffer_info.offset = 0;
+            // #ARNO_TODO see with Spencer if computing "use_shader_objects" this way is the way to go
+            const bool use_shader_objects = pipeline_state == nullptr;
+
+            const auto &shared_resources = gpuav.shared_resources_manager.Get<SharedInstrumentationResources>(
+                gpuav, cb_state->GetValidationCmdCommonDescriptorSetLayout(), use_shader_objects, loc);
+
+            accessed_bda_ranges_dbi.buffer = shared_resources.accessed_bda_buffer.buffer;
+            accessed_bda_ranges_dbi.offset = 0;
+            accessed_bda_ranges_dbi.range = VK_WHOLE_SIZE;
 
             VkWriteDescriptorSet wds = vku::InitStructHelper();
-            wds.dstBinding = glsl::kBindingInstBufferDeviceAddress;
+            wds.dstBinding = glsl::kBindingInstAccessedBufferDeviceAddresses;
             wds.descriptorCount = 1;
             wds.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            wds.pBufferInfo = &bda_input_desc_buffer_info;
+            wds.pBufferInfo = &accessed_bda_ranges_dbi;
             wds.dstSet = instrumentation_desc_set;
+
             desc_writes.emplace_back(wds);
         }
 
@@ -290,45 +490,43 @@ void SetupShaderInstrumentationResources(Validator &gpuav, LockedSharedPtr<Comma
 
     uint32_t operation_index = 0;
     if (bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS)
-        operation_index = cmd_buffer->draw_index++;
+        operation_index = cb_state->draw_index++;
     else if (bind_point == VK_PIPELINE_BIND_POINT_COMPUTE)
-        operation_index = cmd_buffer->compute_index++;
+        operation_index = cb_state->compute_index++;
     else if (bind_point == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR)
-        operation_index = cmd_buffer->trace_rays_index++;
+        operation_index = cb_state->trace_rays_index++;
 
-    // TODO: Using cmd_buffer->per_command_resources.size() is kind of a hack? Worth considering passing the resource index as a
-    // parameter
-    const uint32_t error_logger_i = static_cast<uint32_t>(cmd_buffer->per_command_error_loggers.size());
+    const uint32_t error_logger_i = static_cast<uint32_t>(cb_state->per_command_error_loggers.size());
     const std::array<uint32_t, 2> dynamic_offsets = {
         {operation_index * static_cast<uint32_t>(sizeof(uint32_t)), error_logger_i * static_cast<uint32_t>(sizeof(uint32_t))}};
     if ((pipeline_layout && pipeline_layout->set_layouts.size() <= gpuav.desc_set_bind_index_) &&
         pipeline_layout_handle != VK_NULL_HANDLE) {
-        DispatchCmdBindDescriptorSets(cmd_buffer->VkHandle(), bind_point, pipeline_layout_handle, gpuav.desc_set_bind_index_, 1,
+        DispatchCmdBindDescriptorSets(cb_state->VkHandle(), bind_point, pipeline_layout_handle, gpuav.desc_set_bind_index_, 1,
                                       &instrumentation_desc_set, static_cast<uint32_t>(dynamic_offsets.size()),
                                       dynamic_offsets.data());
     } else {
         // If no pipeline layout was bound when using shader objects that don't use any descriptor set, bind the debug pipeline
         // layout
-        DispatchCmdBindDescriptorSets(cmd_buffer->VkHandle(), bind_point, gpuav.GetDebugPipelineLayout(),
-                                      gpuav.desc_set_bind_index_, 1, &instrumentation_desc_set,
-                                      static_cast<uint32_t>(dynamic_offsets.size()), dynamic_offsets.data());
+        DispatchCmdBindDescriptorSets(cb_state->VkHandle(), bind_point, gpuav.GetDebugPipelineLayout(), gpuav.desc_set_bind_index_,
+                                      1, &instrumentation_desc_set, static_cast<uint32_t>(dynamic_offsets.size()),
+                                      dynamic_offsets.data());
     }
 
     if (pipeline_state && pipeline_layout_handle == VK_NULL_HANDLE) {
-        gpuav.InternalError(cmd_buffer->Handle(), loc,
+        gpuav.InternalError(cb_state->Handle(), loc,
                             "Unable to find pipeline layout to bind debug descriptor set. Aborting GPU-AV");
         return;
     }
 
     // It is possible to have no descriptor sets bound, for example if using push constants.
     const uint32_t desc_binding_index =
-        !cmd_buffer->di_input_buffer_list.empty() ? uint32_t(cmd_buffer->di_input_buffer_list.size()) - 1 : vvl::kU32Max;
+        !cb_state->di_input_buffer_list.empty() ? uint32_t(cb_state->di_input_buffer_list.size()) - 1 : vvl::kU32Max;
 
     const bool uses_robustness = (gpuav.enabled_features.robustBufferAccess || gpuav.enabled_features.robustBufferAccess2 ||
                                   (pipeline_state && pipeline_state->uses_pipeline_robustness));
 
-    CommandBuffer::ErrorLoggerFunc error_logger = [loc, desc_binding_index, desc_binding_list = &cmd_buffer->di_input_buffer_list,
-                                                   cmd_buffer_handle = cmd_buffer->VkHandle(), bind_point, operation_index,
+    CommandBuffer::ErrorLoggerFunc error_logger = [loc, desc_binding_index, desc_binding_list = &cb_state->di_input_buffer_list,
+                                                   cmd_buffer_handle = cb_state->VkHandle(), bind_point, operation_index,
                                                    uses_shader_object = pipeline_state == nullptr,
                                                    uses_robustness](Validator &gpuav, const uint32_t *error_record,
                                                                     const LogObjectList &objlist) {
@@ -341,7 +539,7 @@ void SetupShaderInstrumentationResources(Validator &gpuav, LockedSharedPtr<Comma
         return skip;
     };
 
-    cmd_buffer->per_command_error_loggers.emplace_back(error_logger);
+    cb_state->per_command_error_loggers.emplace_back(error_logger);
 }
 
 void SetupShaderInstrumentationResources(Validator &gpuav, VkCommandBuffer cmd_buffer, VkPipelineBindPoint bind_point,
@@ -351,7 +549,7 @@ void SetupShaderInstrumentationResources(Validator &gpuav, VkCommandBuffer cmd_b
         gpuav.InternalError(cmd_buffer, loc, "Unrecognized command buffer. Aborting GPU-AV.");
         return;
     }
-    return SetupShaderInstrumentationResources(gpuav, cb_state, bind_point, loc);
+    SetupShaderInstrumentationResources(gpuav, cb_state, bind_point, loc);
 }
 
 // Generate the stage-specific part of the message.
@@ -541,7 +739,7 @@ bool LogMessageInstBufferDeviceAddress(const uint32_t *error_record, std::string
     switch (error_record[kHeaderErrorSubCodeOffset]) {
         case kErrorSubCodeBufferDeviceAddressUnallocRef: {
             out_oob_access = true;
-            const char *access_type = error_record[kInstBuffAddrAccessInstructionOffset] == spv::OpStore ? "written" : "read";
+            const char *access_type = error_record[kInstBuffAddrAccessInstructionOffset] == 1 ? "written" : "read";
             uint64_t address = *reinterpret_cast<const uint64_t *>(error_record + kInstBuffAddrUnallocDescPtrLoOffset);
             strm << "Out of bounds access: " << error_record[kInstBuffAddrAccessByteSizeOffset] << " bytes " << access_type
                  << " at buffer device address 0x" << std::hex << address << '.';
@@ -618,6 +816,196 @@ bool LogMessageInstRayQuery(const uint32_t *error_record, std::string &out_error
     }
     out_error_msg = strm.str();
     return error_found;
+}
+
+void PostCallSetupShaderInstrumentationResources(Validator &gpuav, LockedSharedPtr<CommandBuffer, WriteLockGuard> &cb_state,
+                                                 VkPipelineBindPoint bind_point, const Location &loc) {
+    RestorablePipelineState user_pipeline_state(*cb_state, bind_point);
+
+    if (gpuav.bda_validation_possible) {
+        const auto lv_bind_point = ConvertToLvlBindPoint(VK_PIPELINE_BIND_POINT_COMPUTE);
+        auto const &last_bound = cb_state->lastBound[lv_bind_point];
+        const auto *pipeline_state = last_bound.pipeline_state;
+        // #ARNO_TODO see with Spencer if computing "use_shader_objects" this way is the way to go
+        const bool use_shader_objects = pipeline_state == nullptr;
+
+        const auto &shared_resources = gpuav.shared_resources_manager.Get<SharedInstrumentationResources>(
+            gpuav, cb_state->GetValidationCmdCommonDescriptorSetLayout(), use_shader_objects, loc);
+
+        // Allocate buffer to store indirect validation dispatches dimensions
+        // ---
+        gpu::DeviceMemoryBlock indirect_validation_buffer;
+        {
+            VkBufferCreateInfo buffer_info = vku::InitStructHelper();
+            buffer_info.size = 3 * sizeof(uint32_t);
+            buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+            VmaAllocationCreateInfo alloc_info = {};
+            alloc_info.pool = shared_resources.indirect_buffer_bda_mem_pool;
+            VkResult result = vmaCreateBuffer(gpuav.vma_allocator_, &buffer_info, &alloc_info, &indirect_validation_buffer.buffer,
+                                              &indirect_validation_buffer.allocation, nullptr);
+            if (result != VK_SUCCESS) {
+                gpuav.InternalError(gpuav.device, loc,
+                                    "Unable to allocate device memory to store accessed buffer device addresses. Aborting GPU-AV.",
+                                    true);
+                return;
+            }
+            cb_state->gpu_resources_manager.ManageDeviceMemoryBlock(indirect_validation_buffer);
+        }
+
+        // Update indirect buffer setup pipeline descriptor set
+        // ---
+        {
+            std::array<VkWriteDescriptorSet, 2> desc_writes;
+            const VkDescriptorSet indirect_buffer_setup_desc_set =
+                cb_state->gpu_resources_manager.GetManagedDescriptorSet(shared_resources.indirect_buffer_setup_desc_set_layout);
+
+            VkDescriptorBufferInfo accessed_bda_bdi = {};
+            accessed_bda_bdi.buffer = shared_resources.accessed_bda_buffer.buffer;
+            accessed_bda_bdi.range = sizeof(uint32_t);
+            accessed_bda_bdi.offset = 0;
+
+            desc_writes[0] = vku::InitStructHelper();
+            desc_writes[0].dstBinding = 0;
+            desc_writes[0].descriptorCount = 1;
+            desc_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            desc_writes[0].pBufferInfo = &accessed_bda_bdi;
+            desc_writes[0].dstSet = indirect_buffer_setup_desc_set;
+
+            VkDescriptorBufferInfo indirect_buffer_dbi = {};
+            indirect_buffer_dbi.buffer = indirect_validation_buffer.buffer;
+            indirect_buffer_dbi.range = VK_WHOLE_SIZE;
+            indirect_buffer_dbi.offset = 0;
+
+            desc_writes[1] = vku::InitStructHelper();
+            desc_writes[1].dstBinding = 1;
+            desc_writes[1].descriptorCount = 1;
+            desc_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            desc_writes[1].pBufferInfo = &indirect_buffer_dbi;
+            desc_writes[1].dstSet = indirect_buffer_setup_desc_set;
+
+            DispatchUpdateDescriptorSets(gpuav.device, static_cast<uint32_t>(desc_writes.size()), desc_writes.data(), 0, nullptr);
+
+            DispatchCmdBindDescriptorSets(cb_state->VkHandle(), bind_point,
+                                          shared_resources.indirect_buffer_setup_pipeline.GetPipelineLayout(), 0, 1,
+                                          &indirect_buffer_setup_desc_set, 0, nullptr);
+        }
+
+        // Insert barrier to synchronize "accessed bda buffer" read accesses done in validation
+        // ---
+        {
+            VkBufferMemoryBarrier accessed_bda_mem_barrier = vku::InitStructHelper();
+            accessed_bda_mem_barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            accessed_bda_mem_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            accessed_bda_mem_barrier.buffer = shared_resources.accessed_bda_buffer.buffer;
+            accessed_bda_mem_barrier.offset = 0;
+            accessed_bda_mem_barrier.size = VK_WHOLE_SIZE;
+            const VkPipelineStageFlags src_stage =
+                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;  // Multiple commands from multiple pipelines could be accessing buffer
+            const VkPipelineStageFlags dst_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            DispatchCmdPipelineBarrier(cb_state->VkHandle(), src_stage, dst_stage, 0, 0, nullptr, 0, &accessed_bda_mem_barrier, 0,
+                                       nullptr);
+        }
+
+        // Dispatch indirect buffer setup pipeline
+        // ---
+        shared_resources.indirect_buffer_setup_pipeline.Bind(cb_state->VkHandle());
+        DispatchCmdDispatch(cb_state->VkHandle(), 1, 1, 1);
+
+        // Insert barrier to synchronize indirect buffer accesses
+        // ---
+        {
+            VkBufferMemoryBarrier accessed_bda_mem_barrier = vku::InitStructHelper();
+            accessed_bda_mem_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            accessed_bda_mem_barrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+            accessed_bda_mem_barrier.buffer = indirect_validation_buffer.buffer;
+            accessed_bda_mem_barrier.offset = 0;
+            accessed_bda_mem_barrier.size = VK_WHOLE_SIZE;
+            const VkPipelineStageFlags src_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            const VkPipelineStageFlags dst_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            DispatchCmdPipelineBarrier(cb_state->VkHandle(), src_stage, dst_stage, 0, 0, nullptr, 0, &accessed_bda_mem_barrier, 0,
+                                       nullptr);
+        }
+
+        // Get buffer device address validation pipeline descriptor set
+        // ---
+        {
+            VkDescriptorSet bda_validation_desc_set =
+                cb_state->gpu_resources_manager.GetManagedDescriptorSet(shared_resources.bda_validation_desc_set_layout);
+            if (bda_validation_desc_set == VK_NULL_HANDLE) {
+                gpuav.InternalError(gpuav.device, loc,
+                                    "Unable to get descriptor set for buffer device address validation pipeline. Aborting GPU-AV.",
+                                    true);
+                return;
+            }
+
+            std::array<VkWriteDescriptorSet, 2> desc_writes;
+            VkDescriptorBufferInfo valid_bda_dbi = {};
+            valid_bda_dbi.buffer = cb_state->GetBdaRangesSnapshot().buffer;
+            valid_bda_dbi.offset = 0;
+            valid_bda_dbi.range = VK_WHOLE_SIZE;
+
+            desc_writes[0] = vku::InitStructHelper();
+            desc_writes[0].dstBinding = 0;
+            desc_writes[0].descriptorCount = 1;
+            desc_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            desc_writes[0].pBufferInfo = &valid_bda_dbi;
+            desc_writes[0].dstSet = bda_validation_desc_set;
+
+            VkDescriptorBufferInfo accessed_bda_dbi = {};
+            accessed_bda_dbi.buffer = shared_resources.accessed_bda_buffer.buffer;
+            accessed_bda_dbi.offset = 0;
+            accessed_bda_dbi.range = VK_WHOLE_SIZE;
+
+            desc_writes[1] = vku::InitStructHelper();
+            desc_writes[1].dstBinding = 1;
+            desc_writes[1].descriptorCount = 1;
+            desc_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            desc_writes[1].pBufferInfo = &accessed_bda_dbi;
+            desc_writes[1].dstSet = bda_validation_desc_set;
+
+            DispatchUpdateDescriptorSets(gpuav.device, static_cast<uint32_t>(desc_writes.size()), desc_writes.data(), 0, nullptr);
+
+            DispatchCmdBindDescriptorSets(cb_state->VkHandle(), bind_point,
+                                          shared_resources.bda_validation_pipeline.GetPipelineLayout(),
+                                          glsl::kDiagPerCmdDescriptorSet, 1, &bda_validation_desc_set, 0, nullptr);
+        }
+
+        // Bind error logging resources descriptor set
+        // ---
+        {
+            uint32_t operation_index = 0;
+            if (bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS)
+                operation_index = cb_state->draw_index;
+            else if (bind_point == VK_PIPELINE_BIND_POINT_COMPUTE)
+                operation_index = cb_state->compute_index;
+            else if (bind_point == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR)
+                operation_index = cb_state->trace_rays_index;
+
+            const uint32_t error_logger_index = static_cast<uint32_t>(cb_state->per_command_error_loggers.size() - 1);
+
+            BindValidationCmdsCommonDescSet(cb_state, bind_point, shared_resources.bda_validation_pipeline.GetPipelineLayout(),
+                                            operation_index, error_logger_index);
+        }
+
+        // Dispatch buffer device address validation pipeline
+        // ---
+        {
+            shared_resources.bda_validation_pipeline.Bind(cb_state->VkHandle());
+            DispatchCmdDispatchIndirect(cb_state->VkHandle(), indirect_validation_buffer.buffer, 0);
+
+            // No barrier to synchronize accesses to "accessed bda buffer", it should not be needed
+        }
+    }
+}
+
+void PostCallSetupShaderInstrumentationResources(Validator &gpuav, VkCommandBuffer cmd_buffer, VkPipelineBindPoint bind_point,
+                                                 const Location &loc) {
+    auto cb_state = gpuav.GetWrite<CommandBuffer>(cmd_buffer);
+    if (!cb_state) {
+        gpuav.InternalError(cmd_buffer, loc, "Unrecognized command buffer. Aborting GPU-AV.");
+        return;
+    }
+    PostCallSetupShaderInstrumentationResources(gpuav, cb_state, bind_point, loc);
 }
 
 // Pull together all the information from the debug record to build the error message strings,

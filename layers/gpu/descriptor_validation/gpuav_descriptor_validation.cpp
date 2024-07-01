@@ -88,7 +88,7 @@ void UpdateBoundDescriptors(Validator &gpuav, VkCommandBuffer cb, VkPipelineBind
     buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     VmaAllocationCreateInfo alloc_info = {};
     alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    alloc_info.pool = VK_NULL_HANDLE;
+    alloc_info.pool = VK_NULL_HANDLE;  // #ARNO_TODO For bindless_state_buffer: need to have a pool, or define .usage
     DescBindingInfo di_buffers = {};
 
     // Allocate buffer for device addresses of the input buffer for each descriptor set.  This is the buffer written to each

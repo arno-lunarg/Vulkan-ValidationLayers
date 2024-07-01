@@ -118,6 +118,28 @@ void Validator::PreCallRecordCreateDevice(VkPhysicalDevice physicalDevice, const
     } else {
         force_buffer_device_address_ = false;
     }
+
+    // If validating buffer device addresses, enable robust buffer accesses
+    if (gpuav_settings.validate_bda) {
+        VkPhysicalDeviceFeatures available_features{};
+        DispatchGetPhysicalDeviceFeatures(physicalDevice, &available_features);
+        if (!available_features.robustBufferAccess) {
+            LogWarning("WARNING-GPU-Assisted-Validation-Setup", physicalDevice, record_obj.location,
+                       "robustBufferAccess feature is not available, so buffer device address validation cannot be performed.");
+            gpuav_settings.validate_bda = false;
+        } else {
+            if (auto features1 = const_cast<VkPhysicalDeviceFeatures *>(modified_create_info->pEnabledFeatures)) {
+                features1->robustBufferAccess = VK_TRUE;
+            } else if (auto *features2 = const_cast<VkPhysicalDeviceFeatures2 *>(
+                           vku::FindStructInPNextChain<VkPhysicalDeviceFeatures2>(modified_create_info->pNext))) {
+                features2->features.robustBufferAccess = VK_TRUE;
+            } else {
+                VkPhysicalDeviceFeatures2 features = vku::InitStructHelper();
+                features.features.robustBufferAccess = VK_TRUE;
+                vku::AddToPnext(*modified_create_info, features);
+            }
+        }
+    }
 }
 
 // Perform initializations that can be done at Create Device time.
@@ -138,14 +160,15 @@ void Validator::PostCreateDevice(const VkDeviceCreateInfo *pCreateInfo, const Lo
         {glsl::kBindingInstErrorBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
         // Current bindless buffer
         {glsl::kBindingInstBindlessDescriptor, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
-        // Buffer holding buffer device addresses
-        {glsl::kBindingInstBufferDeviceAddress, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
-        // Buffer holding action command index in command buffer
+        // Buffer holding accessed buffer address ranges
+        {glsl::kBindingInstAccessedBufferDeviceAddresses, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL,
+         nullptr},  // Buffer holding action command index in command buffer
         {glsl::kBindingInstActionIndex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_ALL, nullptr},
         // Buffer holding a resource index from the per command buffer command resources list
         {glsl::kBindingInstCmdResourceIndex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_ALL, nullptr},
         // Commands errors counts buffer
         {glsl::kBindingInstCmdErrorsCount, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
+
     };
 
     // TODO: Such a call is expected to be the first thing happening in this function,

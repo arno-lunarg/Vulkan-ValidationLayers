@@ -21,10 +21,15 @@
 
 namespace gpuav {
 
-void SetupShaderInstrumentationResources(Validator& gpuav, LockedSharedPtr<gpuav::CommandBuffer, WriteLockGuard>& cmd_buffer,
+void SetupShaderInstrumentationResources(Validator& gpuav, LockedSharedPtr<gpuav::CommandBuffer, WriteLockGuard>& cb_state,
                                          VkPipelineBindPoint bind_point, const Location& loc);
 void SetupShaderInstrumentationResources(Validator& gpuav, VkCommandBuffer cmd_buffer, VkPipelineBindPoint bind_point,
                                          const Location& loc);
+void PostCallSetupShaderInstrumentationResources(Validator& gpuav,
+                                                 LockedSharedPtr<gpuav::CommandBuffer, WriteLockGuard>& cmd_buffer,
+                                                 VkPipelineBindPoint bind_point, const Location& loc);
+void PostCallSetupShaderInstrumentationResources(Validator& gpuav, VkCommandBuffer cmd_buffer, VkPipelineBindPoint bind_point,
+                                                 const Location& loc);
 
 // Return true iff a error has been found
 bool LogInstrumentationError(Validator& gpuav, VkCommandBuffer cmd_buffer, const LogObjectList& objlist, uint32_t operation_index,
