@@ -707,15 +707,19 @@ bool ValidationPipeline::BuildOnlyLayoutAndShader(Validator &gpuav, const Locati
 }
 
 bool ValidationPipeline::BuildPipeline(Validator &gpuav, const Location &loc) {
+    if (!BuildOnlyLayoutAndShader(gpuav, loc)) {
+        return false;
+    }
+
     const bool uses_shader_object = shader_object_ci_.codeSize != 0;
 
     if (uses_shader_object) {
         return true;
     }
 
-    VkResult result = DispatchCreateShaderModule(gpuav.device, &shader_module_ci_, nullptr, &shader_module_);
+    VkResult result = DispatchCreateShaderModule(device_, &shader_module_ci_, nullptr, &shader_module_);
     if (result != VK_SUCCESS) {
-        gpuav.InternalError(gpuav.device, loc, "Unable to create shader module. Aborting GPU-AV.");
+        gpuav.InternalError(device_, loc, "Unable to create shader module. Aborting GPU-AV.");
         return false;
     }
 
@@ -736,11 +740,11 @@ bool ValidationPipeline::BuildPipeline(Validator &gpuav, const Location &loc) {
         assert(false);
     }
 
-    DispatchDestroyShaderModule(gpuav.device, shader_module_, nullptr);
+    DispatchDestroyShaderModule(device_, shader_module_, nullptr);
     shader_module_ = VK_NULL_HANDLE;
 
     if (result != VK_SUCCESS) {
-        gpuav.InternalError(gpuav.device, loc, "Failed to create pipeline. Aborting GPU-AV.");
+        gpuav.InternalError(device_, loc, "Failed to create pipeline. Aborting GPU-AV.");
         return false;
     }
 

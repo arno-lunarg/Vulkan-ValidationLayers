@@ -152,6 +152,8 @@ bool Validator::InstrumentShader(const vvl::span<const uint32_t> &input, uint32_
     return true;
 }
 
+static constexpr uint32_t max_stored_accessed_bda = 8 * 1024 * 1024;
+
 struct SharedInstrumentationResources final {
     Validator &gpuav;
 
@@ -176,7 +178,7 @@ struct SharedInstrumentationResources final {
         {
             VkBufferCreateInfo accessed_bda_buffer_ci = vku::InitStructHelper();
             accessed_bda_buffer_ci.size =
-                (8 * sizeof(uint32_t)) * 32 * 1024 * 1024;  // #ARNO_TODO do not hard code accessed_bda_buffer_ci.size
+                (8 * sizeof(uint32_t)) * max_stored_accessed_bda;  // #ARNO_TODO do not hard code accessed_bda_buffer_ci.size
             accessed_bda_buffer_ci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
             VmaAllocationCreateInfo alloc_create_info = {};
             alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -370,7 +372,7 @@ void SetupShaderInstrumentationResources(Validator &gpuav, LockedSharedPtr<Comma
     {
         // Pathetic way of trying to make sure we take care of updating all
         // bindings of the instrumentation descriptor set
-        assert(gpuav.instrumentation_bindings_.size() == 7);
+        assert(gpuav.instrumentation_bindings_.size() == 6);
         std::vector<VkWriteDescriptorSet> desc_writes = {};
 
         // Error output buffer
@@ -832,6 +834,7 @@ void PostCallSetupShaderInstrumentationResources(Validator &gpuav, LockedSharedP
         const auto &shared_resources = gpuav.shared_resources_manager.Get<SharedInstrumentationResources>(
             gpuav, cb_state->GetValidationCmdCommonDescriptorSetLayout(), use_shader_objects, loc);
 
+#if 0
         // Allocate buffer to store indirect validation dispatches dimensions
         // ---
         gpu::DeviceMemoryBlock indirect_validation_buffer;
@@ -890,6 +893,7 @@ void PostCallSetupShaderInstrumentationResources(Validator &gpuav, LockedSharedP
                                           &indirect_buffer_setup_desc_set, 0, nullptr);
         }
 
+
         // Insert barrier to synchronize "accessed bda buffer" read accesses done in validation
         // ---
         {
@@ -925,7 +929,7 @@ void PostCallSetupShaderInstrumentationResources(Validator &gpuav, LockedSharedP
             DispatchCmdPipelineBarrier(cb_state->VkHandle(), src_stage, dst_stage, 0, 0, nullptr, 0, &accessed_bda_mem_barrier, 0,
                                        nullptr);
         }
-
+#endif
         // Get buffer device address validation pipeline descriptor set
         // ---
         {
@@ -991,9 +995,11 @@ void PostCallSetupShaderInstrumentationResources(Validator &gpuav, LockedSharedP
         // ---
         {
             shared_resources.bda_validation_pipeline.Bind(cb_state->VkHandle());
+#if 0
             DispatchCmdDispatchIndirect(cb_state->VkHandle(), indirect_validation_buffer.buffer, 0);
-
-            // No barrier to synchronize accesses to "accessed bda buffer", it should not be needed
+#endif
+            // DispatchCmdDispatch(cb_state->VkHandle(), max_stored_accessed_bda / 64, 1, 1);
+            //  No barrier to synchronize accesses to "accessed bda buffer", it should not be needed
         }
     }
 }

@@ -269,6 +269,7 @@ void Instruction::ReplaceLinkedId(vvl::unordered_map<uint32_t, uint32_t>& id_swa
         case spv::OpPhi:
         case spv::OpAccessChain:
         case spv::OpConstantComposite:
+        case spv::OpSelect:
         case spv::OpSpecConstantComposite:
             swap(1);
             swap_to_end(3);
