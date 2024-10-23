@@ -884,6 +884,12 @@ void GpuShaderInstrumentor::PreCallRecordPipelineCreationShaderInstrumentation(
         if (!cached) {
             pass =
                 InstrumentShader(module_state->spirv->words_, unique_shader_id, has_bindless_descriptors, loc, instrumented_spirv);
+            if (gpuav_settings.debug_dump_instrumented_shaders) {
+                std::string file_name = "dump_PreCallRecordPipelineCreationShaderInstrumentation.spv";
+                std::ofstream debug_file(file_name, std::ios::out | std::ios::binary);
+                debug_file.write(reinterpret_cast<char *>(instrumented_spirv.data()),
+                                 static_cast<std::streamsize>(instrumented_spirv.size() * sizeof(uint32_t)));
+            }
         }
         if (cached || pass) {
             instrumentation_metadata.unique_shader_id = unique_shader_id;
@@ -913,6 +919,8 @@ void GpuShaderInstrumentor::PreCallRecordPipelineCreationShaderInstrumentation(
             } else {
                 assert(false);
             }
+
+            instrumentation_metadata.instrumented_code_do_not_commit = instrumented_spirv;
 
             if (gpuav_settings.cache_instrumented_shaders && !cached) {
                 instrumented_shaders_cache_.Add(unique_shader_id, instrumented_spirv);
@@ -952,12 +960,20 @@ void GpuShaderInstrumentor::PostCallRecordPipelineCreationShaderInstrumentation(
             shader_module_handle = kPipelineStageInfoHandle;
         }
 
+        if (gpuav_settings.debug_dump_instrumented_shaders) {
+            std::string file_name = "dump_PostCallRecordPipelineCreationShaderInstrumentation.spv";
+            std::ofstream debug_file(file_name, std::ios::out | std::ios::binary);
+            debug_file.write(reinterpret_cast<char *>(code.data()), static_cast<std::streamsize>(code.size() * sizeof(uint32_t)));
+        }
+
+        // #ARNO ok, I need to store the instrumented code, but it seems we also want the uninstrumented
         instrumented_shaders_map_.insert_or_assign(instrumentation_metadata.unique_shader_id, pipeline_state.VkHandle(),
-                                                   shader_module_handle, VK_NULL_HANDLE, std::move(code));
+                                                   shader_module_handle, VK_NULL_HANDLE,
+                                                   instrumentation_metadata.instrumented_code_do_not_commit);
     }
 }
 
-// While have an almost duplicated funciton is not ideal, the core issue is we have a single, templated function designed for
+// While having an almost duplicated function is not ideal, the core issue is we have a single, templated function designed for
 // Graphics, Compute, and Ray Tracing. GPL is only for graphics, so we end up needing this "side code path" for graphics only and it
 // doesn't fit in the "all pipeline" templated flow.
 void GpuShaderInstrumentor::PreCallRecordPipelineCreationShaderInstrumentationGPL(
@@ -1119,7 +1135,8 @@ void GpuShaderInstrumentor::PostCallRecordPipelineCreationShaderInstrumentationG
             }
 
             instrumented_shaders_map_.insert_or_assign(instrumentation_metadata.unique_shader_id, lib->VkHandle(),
-                                                       shader_module_handle, VK_NULL_HANDLE, std::move(code));
+                                                       shader_module_handle, VK_NULL_HANDLE,
+                                                       instrumentation_metadata.instrumented_code_do_not_commit);
         }
     }
 }
@@ -1196,6 +1213,7 @@ bool GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t> &in
     // 1. We use buffer device address in it and we don't want to validate the inside of this pass
     // 2. We might want to debug the above passes and want to inject our own debug printf calls
     if (gpuav_settings.debug_printf_enabled) {
+        modified |= module.RunPassAutoPrintf();
         modified |= module.RunPassDebugPrintf(glsl::kBindingInstDebugPrintf);
     }
 

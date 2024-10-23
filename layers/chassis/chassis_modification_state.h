@@ -84,6 +84,7 @@ struct ShaderInstrumentationMetadata {
 
     // Used to know if VkShaderModuleCreateInfo is passed down VkPipelineShaderStageCreateInfo
     bool passed_in_shader_stage_ci = false;
+    std::vector<uint32_t> instrumented_code_do_not_commit;
 };
 
 struct CreateGraphicsPipelines {

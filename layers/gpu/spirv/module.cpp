@@ -26,6 +26,7 @@
 #include "ray_query_pass.h"
 #include "debug_printf_pass.h"
 #include "post_process_descriptor_indexing.h"
+#include "auto_printf_pass.h"
 
 #include <iostream>
 
@@ -336,6 +337,15 @@ bool Module::RunPassDebugPrintf(uint32_t binding_slot) {
 
 bool Module::RunPassPostProcessDescriptorIndexing() {
     PostProcessDescriptorIndexingPass pass(*this);
+    const bool changed = pass.Run();
+    if (print_debug_info_) {
+        pass.PrintDebugInfo();
+    }
+    return changed;
+}
+
+bool Module::RunPassAutoPrintf() {
+    AutoPrintfPass pass(*this);
     const bool changed = pass.Run();
     if (print_debug_info_) {
         pass.PrintDebugInfo();

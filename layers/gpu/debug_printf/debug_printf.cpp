@@ -25,6 +25,7 @@
 #include "state_tracker/shader_instruction.h"
 
 #include <iostream>
+#include <fstream>
 
 namespace gpuav {
 namespace debug_printf {
@@ -157,12 +158,15 @@ static std::vector<Substring> ParseFormatString(const std::string &format_string
 static std::string FindFormatString(const std::vector<Instruction> &instructions, uint32_t string_id) {
     std::string format_string;
     for (const auto &insn : instructions) {
-        if (insn.Opcode() == spv::OpString && insn.Word(1) == string_id) {
-            format_string = insn.GetAsString(2);
-            break;
+        if (insn.Opcode() == spv::OpString) {
+            uint32_t id = insn.Word(1);
+            if (id == string_id) {
+                format_string = insn.GetAsString(2);
+                break;
+            }
         }
         // if here, seen all OpString and can return early
-        if (insn.Opcode() == spv::OpFunction) break;
+        // if (insn.Opcode() == spv::OpFunction) break;
     }
     return format_string;
 }
@@ -216,6 +220,12 @@ void AnalyzeAndGenerateMessage(Validator &gpuav, VkCommandBuffer command_buffer,
         }
 
         std::vector<Instruction> instructions;
+        {
+            std::string file_name = "dump_AnalyzeAndGenerateMessage.spv";
+            std::ofstream debug_file(file_name, std::ios::out | std::ios::binary);
+            debug_file.write(reinterpret_cast<const char *>(instrumented_shader->instrumented_spirv.data()),
+                             static_cast<std::streamsize>(instrumented_shader->instrumented_spirv.size() * sizeof(uint32_t)));
+        }
         spirv::GenerateInstructions(instrumented_shader->instrumented_spirv, instructions);
 
         // Search through the shader source for the printf format string for this invocation

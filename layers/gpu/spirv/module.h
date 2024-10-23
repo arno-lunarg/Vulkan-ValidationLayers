@@ -91,6 +91,7 @@ class Module {
     bool RunPassRayQuery();
     bool RunPassDebugPrintf(uint32_t binding_slot);
     bool RunPassPostProcessDescriptorIndexing();
+    bool RunPassAutoPrintf();
 
     void AddInterfaceVariables(uint32_t id, spv::StorageClass storage_class);
 
