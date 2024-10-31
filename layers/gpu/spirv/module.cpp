@@ -396,6 +396,7 @@ void Module::ToBinary(std::vector<uint32_t>& out) {
         inst->ToBinary(out);
     }
     for (const auto& inst : annotations_) {
+        // std::cout << inst->DebugString() << std::endl;
         inst->ToBinary(out);
     }
     for (const auto& inst : types_values_constants_) {

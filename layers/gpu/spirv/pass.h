@@ -43,6 +43,7 @@ class Pass {
     uint32_t GetStageInfo(Function& function, BasicBlockIt target_block_it, InstructionIt& target_inst_it);
 
     const Instruction* GetDecoration(uint32_t id, spv::Decoration decoration);
+    std::vector<const Instruction*> GetAllDecoration(uint32_t id, spv::Decoration decoration);
     const Instruction* GetMemeberDecoration(uint32_t id, uint32_t member_index, spv::Decoration decoration);
 
     uint32_t GetLastByte(const Instruction& var_inst, const Instruction& access_chain_inst, BasicBlock& block,

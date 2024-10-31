@@ -16,6 +16,7 @@
 #include "auto_printf_pass.h"
 #include "module.h"
 #include "gpu/shaders/gpuav_error_header.h"
+#include "utils/vk_layer_utils.h"
 #include <spirv/unified1/NonSemanticDebugPrintf.h>
 #include <cstring>
 #include <iostream>
@@ -27,6 +28,13 @@ namespace spirv {
 void AutoPrintfPass::Reset() { ext_import_id_ = 0; }
 
 bool AutoPrintfPass::Run() {
+#if 0
+    std::cout << "At top auto printf Run:" << std::endl;
+    for (const auto& inst : module_.annotations_) {
+        std::cout << inst->DebugString() << std::endl;
+    }
+#endif
+
     // Look for OpExtInstImport NonSemantic.DebugPrintf
     // Add it if not there
     // ---
@@ -42,7 +50,7 @@ bool AutoPrintfPass::Run() {
     }
 #endif
 
-    auto words_from_string = [](std::string_view str, std::vector<uint32_t>* dwords) {
+    auto get_words_from_string = [](std::string_view str, std::vector<uint32_t>* dwords) {
         uint32_t dword = 0;
         for (size_t i = 0; i < str.length(); ++i) {
             auto c = (uint32_t)str[i];
@@ -62,7 +70,7 @@ bool AutoPrintfPass::Run() {
         std::vector<uint32_t> printf_import_dwords = {printf_import_id};
         const std::string_view non_semantic_debug_printf_str = "NonSemantic.DebugPrintf";
 
-        words_from_string(non_semantic_debug_printf_str, &printf_import_dwords);
+        get_words_from_string(non_semantic_debug_printf_str, &printf_import_dwords);
         std::unique_ptr<Instruction> printf_import =
             std::make_unique<Instruction>(1 + (uint32_t)printf_import_dwords.size(), spv::Op::OpExtInstImport);
         printf_import->Fill(printf_import_dwords);
@@ -83,12 +91,25 @@ bool AutoPrintfPass::Run() {
             const uint32_t function_id = function->GetDef().Word(2);
             if (entry_point_id != function_id) continue;
 
+            uint32_t execution_mode = entry_point_inst->Word(1);
+            std::cout << "Execution mode: " << execution_mode << std::endl;
+            std::vector<uint32_t> ray_tracing_execution_modes = {5313, 5314, 5315, 5316, 5317, 5318};
+            if (!IsValueIn(execution_mode, ray_tracing_execution_modes)) continue;
+
             // Found entry point function, create corresponding OpString:
             // %result_id = OpString "In <entry_point_name>"
-            const std::string_view entry_point_name = entry_point_inst->GetAsString(3);
+            std::string entry_point_name = entry_point_inst->GetAsString(3);
+#if 0
+            if (entry_point_name == "RayGen" || entry_point_name == "ClosestHit0" || entry_point_name == "AnyHit1") {
+                continue;
+            }
+#endif
+            entry_point_name += '\n';
+            std::cout << "Adding auto printf to " << entry_point_name << std::endl;
+            // std::cout << "Entry point name: " << entry_point_name << std::endl;
             const uint32_t op_string_id = module_.TakeNextId();
             std::vector<uint32_t> op_string_words = {op_string_id};
-            words_from_string(entry_point_name, &op_string_words);
+            get_words_from_string(entry_point_name, &op_string_words);
             std::unique_ptr<Instruction> op_string_inst =
                 std::make_unique<Instruction>(1 + (uint32_t)op_string_words.size(), spv::Op::OpString);
 
@@ -112,7 +133,7 @@ bool AutoPrintfPass::Run() {
     }
 
     if (instrumentations_count_ == 0) {
-        assert(false);
+        // assert(false);
         return false;
     }
 

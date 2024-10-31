@@ -38,6 +38,7 @@
 #include <cassert>
 #include <fstream>
 #include <string>
+#include <iostream>
 
 namespace gpuav {
 
@@ -527,6 +528,7 @@ void GpuShaderInstrumentor::PreCallRecordCreateRayTracingPipelinesKHR(
     VkDevice device, VkDeferredOperationKHR deferredOperation, VkPipelineCache pipelineCache, uint32_t count,
     const VkRayTracingPipelineCreateInfoKHR *pCreateInfos, const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
     const RecordObject &record_obj, PipelineStates &pipeline_states, chassis::CreateRayTracingPipelinesKHR &chassis_state) {
+    LogInfo("Info", LogObjectList(), record_obj.location, "In " __FUNCTION__);
     BaseClass::PreCallRecordCreateRayTracingPipelinesKHR(device, deferredOperation, pipelineCache, count, pCreateInfos, pAllocator,
                                                          pPipelines, record_obj, pipeline_states, chassis_state);
     if (!gpuav_settings.IsSpirvModified()) return;
@@ -534,6 +536,7 @@ void GpuShaderInstrumentor::PreCallRecordCreateRayTracingPipelinesKHR(
     chassis_state.shader_instrumentations_metadata.resize(count);
     chassis_state.modified_create_infos.resize(count);
 
+    std::cout << "In " __FUNCTION__ << std::endl;
     for (uint32_t i = 0; i < count; ++i) {
         const auto &pipeline_state = pipeline_states[i];
 
@@ -1163,6 +1166,7 @@ bool GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t> &in
 
     if (gpuav_settings.debug_dump_instrumented_shaders) {
         std::string file_name = "dump_" + std::to_string(unique_shader_id) + "_before.spv";
+        std::cout << "Dumping to: " << file_name << std::endl;
         std::ofstream debug_file(file_name, std::ios::out | std::ios::binary);
         debug_file.write(reinterpret_cast<const char *>(input_spirv.data()),
                          static_cast<std::streamsize>(input_spirv.size() * sizeof(uint32_t)));
@@ -1182,6 +1186,12 @@ bool GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t> &in
     spirv::Module module(input_spirv, debug_report, module_settings);
 
     bool modified = false;
+#if 0
+    std::cout << "Right before running passes:" << std::endl;
+    for (const auto& inst : module.annotations_) {
+        std::cout << inst->DebugString() << std::endl;
+    }
+#endif
 
     // If descriptor indexing is enabled, enable length checks and updated descriptor checks
     if (gpuav_settings.shader_instrumentation.bindless_descriptor) {
@@ -1244,6 +1254,12 @@ bool GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t> &in
             strm << "Instrumented shader (id " << unique_shader_id << ") is invalid, spirv-val error:\n"
                  << instrumented_error << " Proceeding with non instrumented shader.";
             InternalError(device, loc, strm.str().c_str());
+
+            std::string file_name = "bugged_instrumented_shader.spv";
+            std::ofstream debug_file(file_name, std::ios::out | std::ios::binary);
+            debug_file.write(reinterpret_cast<char *>(out_instrumented_spirv.data()),
+                             static_cast<std::streamsize>(out_instrumented_spirv.size() * sizeof(uint32_t)));
+
             return false;
         }
     }

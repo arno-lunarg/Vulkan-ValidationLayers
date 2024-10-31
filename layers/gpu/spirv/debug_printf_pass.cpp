@@ -23,6 +23,8 @@
 namespace gpuav {
 namespace spirv {
 
+static uint32_t debug_variable = 0;
+
 // All functions are a list of uint32_t
 // The difference is just how many are passed in
 uint32_t DebugPrintfPass::GetLinkFunctionId(uint32_t argument_count) {
@@ -265,6 +267,74 @@ void DebugPrintfPass::CreateFunctionCall(BasicBlockIt block_it, InstructionIt* i
     block.CreateInstruction(spv::OpFunctionCall, function_call_params, inst_it);
 }
 
+enum ExecutionModel {
+    ExecutionModelVertex = 0,
+    ExecutionModelTessellationControl = 1,
+    ExecutionModelTessellationEvaluation = 2,
+    ExecutionModelGeometry = 3,
+    ExecutionModelFragment = 4,
+    ExecutionModelGLCompute = 5,
+    ExecutionModelKernel = 6,
+    ExecutionModelTaskNV = 5267,
+    ExecutionModelMeshNV = 5268,
+    ExecutionModelRayGenerationKHR = 5313,
+    ExecutionModelRayGenerationNV = 5313,
+    ExecutionModelIntersectionKHR = 5314,
+    ExecutionModelIntersectionNV = 5314,
+    ExecutionModelAnyHitKHR = 5315,
+    ExecutionModelAnyHitNV = 5315,
+    ExecutionModelClosestHitKHR = 5316,
+    ExecutionModelClosestHitNV = 5316,
+    ExecutionModelMissKHR = 5317,
+    ExecutionModelMissNV = 5317,
+    ExecutionModelCallableKHR = 5318,
+    ExecutionModelCallableNV = 5318,
+    ExecutionModelTaskEXT = 5364,
+    ExecutionModelMeshEXT = 5365,
+    ExecutionModelMax = 0x7fffffff,
+};
+
+inline const char* ExecutionModelToString(uint32_t value) {
+    switch (value) {
+        case ExecutionModelVertex:
+            return "Vertex";
+        case ExecutionModelTessellationControl:
+            return "TessellationControl";
+        case ExecutionModelTessellationEvaluation:
+            return "TessellationEvaluation";
+        case ExecutionModelGeometry:
+            return "Geometry";
+        case ExecutionModelFragment:
+            return "Fragment";
+        case ExecutionModelGLCompute:
+            return "GLCompute";
+        case ExecutionModelKernel:
+            return "Kernel";
+        case ExecutionModelTaskNV:
+            return "TaskNV";
+        case ExecutionModelMeshNV:
+            return "MeshNV";
+        case ExecutionModelRayGenerationKHR:
+            return "RayGenerationKHR";
+        case ExecutionModelIntersectionKHR:
+            return "IntersectionKHR";
+        case ExecutionModelAnyHitKHR:
+            return "AnyHitKHR";
+        case ExecutionModelClosestHitKHR:
+            return "ClosestHitKHR";
+        case ExecutionModelMissKHR:
+            return "MissKHR";
+        case ExecutionModelCallableKHR:
+            return "CallableKHR";
+        case ExecutionModelTaskEXT:
+            return "TaskEXT";
+        case ExecutionModelMeshEXT:
+            return "MeshEXT";
+        default:
+            return "Unknown";
+    }
+}
+
 void DebugPrintfPass::CreateDescriptorSet() {
     // Create descriptor set to match output buffer
     // The following is what the GLSL would look like
@@ -295,8 +365,18 @@ void DebugPrintfPass::CreateDescriptorSet() {
     new_struct_inst->Fill({struct_type_id, uint32_type.Id(), runtime_array_type_id});
     const Type& struct_type = module_.type_manager_.AddType(std::move(new_struct_inst), SpvType::kStruct);
     module_.AddDecoration(struct_type_id, spv::DecorationBlock, {});
+    const std::vector<const Instruction*> decorations = GetAllDecoration(struct_type_id, spv::DecorationBlock);
+    if (decorations.size() != 1) {
+        std::cout << "ALERT ALERT ALERT decorations.size() = " << decorations.size() << std::endl;
+    }
+    for (const std::unique_ptr<Instruction>& instruction : module_.entry_points_) {
+        uint32_t execution_model = instruction->Word(1);
+        std::cout << ExecutionModelToString(execution_model) << std::endl;
+    }
+    std::cout << "Adding spv::DecorationBlock" << std::endl;
     module_.AddMemberDecoration(struct_type_id, gpuav::kDebugPrintfOutputBufferDWordsCount, spv::DecorationOffset, {0});
     module_.AddMemberDecoration(struct_type_id, gpuav::kDebugPrintfOutputBufferData, spv::DecorationOffset, {4});
+    debug_variable = struct_type_id;
 
     // create a storage buffer interface variable
     const Type& pointer_type = module_.type_manager_.GetTypePointer(spv::StorageClassStorageBuffer, struct_type);
@@ -464,6 +544,12 @@ void DebugPrintfPass::Reset() {
 }
 
 bool DebugPrintfPass::Run() {
+#if 0
+    std::cout << "At top of debug printf pass Run:" << std::endl;
+    for (const auto& inst : module_.annotations_) {
+        std::cout << inst->DebugString() << std::endl;
+    }
+#endif
     for (const auto& inst : module_.ext_inst_imports_) {
         const char* import_string = inst->GetAsString(2);
         if (strcmp(import_string, "NonSemantic.DebugPrintf") == 0) {
@@ -499,8 +585,19 @@ bool DebugPrintfPass::Run() {
     if (instrumentations_count_ == 0) {
         return false;
     }
-
+#if 0
+    std::cout << "Right before CreateDescriptorSet" << std::endl;
+    for (const auto& inst : module_.annotations_) {
+        std::cout << inst->DebugString() << std::endl;
+    }
+#endif
     CreateDescriptorSet();
+#if 0
+    std::cout << "Right after CreateDescriptorSet" << std::endl;
+    for (const auto& inst : module_.annotations_) {
+        std::cout << inst->DebugString() << std::endl;
+    }
+#endif
 
     // Here we "link" the functions, but since it is all generated, no need to go through the LinkInfo flow
     for (const auto& entry : function_id_map_) {
@@ -528,6 +625,11 @@ bool DebugPrintfPass::Run() {
                 }
             }
         }
+    }
+
+    const std::vector<const Instruction*> decorations = GetAllDecoration(debug_variable, spv::DecorationBlock);
+    if (decorations.size() != 1) {
+        std::cout << "ALERT ALERT ALERT at end of DebugPrintfPass::Run(), decorations.size() = " << decorations.size() << std::endl;
     }
 
     return true;

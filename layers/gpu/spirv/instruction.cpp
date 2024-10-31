@@ -32,6 +32,25 @@ void Instruction::UpdateDebugInfo() {
 #endif
 }
 
+std::string Instruction::DebugString() {
+    std::string debug_info;
+
+    debug_info += std::to_string(Opcode());
+    debug_info += ' ';
+    debug_info += std::to_string(Length());
+    debug_info += ' ';
+    debug_info += std::to_string(ResultId());
+    debug_info += ' ';
+    debug_info += std::to_string(TypeId());
+    debug_info += ' ';
+    for (uint32_t i = 0; i < words_.size() && i < 12; i++) {
+        debug_info += std::to_string(words_[i]);
+        debug_info += ' ';
+    }
+
+    return debug_info;
+}
+
 void Instruction::SetResultTypeIndex() {
     const bool has_result = OpcodeHasResult(Opcode());
     if (OpcodeHasType(Opcode())) {

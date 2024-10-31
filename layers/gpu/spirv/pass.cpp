@@ -195,6 +195,17 @@ const Instruction* Pass::GetDecoration(uint32_t id, spv::Decoration decoration) 
     return nullptr;
 }
 
+std::vector<const Instruction*> Pass::GetAllDecoration(uint32_t id, spv::Decoration decoration) {
+    std::vector<const Instruction*> decorations;
+    for (const auto& annotation : module_.annotations_) {
+        if (annotation->Opcode() == spv::OpDecorate && annotation->Word(1) == id &&
+            spv::Decoration(annotation->Word(2)) == decoration) {
+            decorations.emplace_back(annotation.get());
+        }
+    }
+    return decorations;
+}
+
 const Instruction* Pass::GetMemeberDecoration(uint32_t id, uint32_t member_index, spv::Decoration decoration) {
     for (const auto& annotation : module_.annotations_) {
         if (annotation->Opcode() == spv::OpMemberDecorate && annotation->Word(1) == id && annotation->Word(2) == member_index &&

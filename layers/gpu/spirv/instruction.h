@@ -96,6 +96,7 @@ struct Instruction {
     small_vector<uint32_t, word_vector_length, uint32_t> words_;
 
     void UpdateDebugInfo();
+    std::string DebugString();
 #ifndef NDEBUG
     // Helping values to make debugging what is happening in a instruction easier
     spv::Op d_opcode_;
