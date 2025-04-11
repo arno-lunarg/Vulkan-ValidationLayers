@@ -71,6 +71,7 @@ class Buffer {
     bool IsDestroyed() const { return buffer == VK_NULL_HANDLE; }
     const VkBuffer &VkHandle() const { return buffer; }
     const VmaAllocation &Allocation() const { return allocation; }
+    VkDeviceSize Size() const { return size; }
     VkDeviceAddress Address() const { return device_address; };
     void Clear() const;
 

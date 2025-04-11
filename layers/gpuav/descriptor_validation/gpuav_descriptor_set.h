@@ -29,6 +29,7 @@
 namespace gpuav {
 class DescriptorHeap;
 class Validator;
+class CommandBufferSubState;
 
 // Information about how each descriptor was accessed
 struct DescriptorAccess {
@@ -50,7 +51,7 @@ class DescriptorSetSubState : public vvl::DescriptorSetSubState {
     void NotifyUpdate() override;
 
     VkDeviceAddress GetTypeAddress(Validator &gpuav, const Location &loc);
-    VkDeviceAddress GetPostProcessBuffer(Validator &gpuav, const Location &loc);
+    VkDeviceAddress GetPostProcessBuffer(Validator &gpuav, CommandBufferSubState &cb_state, const Location &loc);
     bool HasPostProcessBuffer() const { return !post_process_buffer_.IsDestroyed(); }
     bool CanPostProcess() const;
     void ClearPostProcess(const Location &loc) const;

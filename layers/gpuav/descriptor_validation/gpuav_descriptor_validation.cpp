@@ -60,7 +60,8 @@ void UpdateBoundDescriptorsPostProcess(Validator &gpuav, CommandBufferSubState &
             continue;  // can have gaps in descriptor sets
         }
 
-        ssbo_buffer_ptr->descriptor_index_post_process_buffers[i] = SubState(*ds_slot.ds_state).GetPostProcessBuffer(gpuav, loc);
+        ssbo_buffer_ptr->descriptor_index_post_process_buffers[i] =
+            SubState(*ds_slot.ds_state).GetPostProcessBuffer(gpuav, cb_state, loc);
     }
 }
 

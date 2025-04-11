@@ -58,6 +58,8 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     // in a single vkCmdBindDescriptorSet call then this will allocate a lot of redundant memory
     std::vector<DescriptorCommandBinding> descriptor_command_bindings;
 
+    vvl::unordered_map<VkDeviceAddress, VkDeviceSize> post_process_buffers{};
+
     // Buffer to be bound every draw/dispatch/action
     VkBuffer descriptor_indexing_buffer = VK_NULL_HANDLE;
     VkBuffer post_process_buffer_lut = VK_NULL_HANDLE;

@@ -251,11 +251,14 @@ bool DescriptorSetSubState::CanPostProcess() const {
     return true;
 }
 
-VkDeviceAddress DescriptorSetSubState::GetPostProcessBuffer(Validator &gpuav, const Location &loc) {
+VkDeviceAddress DescriptorSetSubState::GetPostProcessBuffer(Validator &gpuav, CommandBufferSubState &cb_state,
+                                                            const Location &loc) {
     auto guard = Lock();
     // Each set only needs to create its post process buffer once. It is based on total descriptor count, and even with things like
     // VARIABLE_DESCRIPTOR_COUNT_BIT, the size will only get smaller afterwards.
     if (post_process_buffer_.Address() != 0) {
+        const VkDeviceAddress addr = post_process_buffer_.Address();
+        cb_state.post_process_buffers[addr] = post_process_buffer_.Size();
         return post_process_buffer_.Address();
     }
 
@@ -276,6 +279,9 @@ VkDeviceAddress DescriptorSetSubState::GetPostProcessBuffer(Validator &gpuav, co
     if (!success) {
         return 0;
     }
+
+    const VkDeviceAddress addr = post_process_buffer_.Address();
+    cb_state.post_process_buffers[addr] = post_process_buffer_.Size();
 
     ClearPostProcess(loc);
 

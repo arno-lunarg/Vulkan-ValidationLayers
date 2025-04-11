@@ -270,6 +270,7 @@ void CommandBufferSubState::Reset(const Location &loc) {
 }
 
 void CommandBufferSubState::ResetCBState(bool should_destroy) {
+    post_process_buffers.clear();
     max_actions_cmd_validation_reached_ = false;
 
     // Free the device memory and descriptor set(s) associated with a command buffer.
@@ -362,6 +363,15 @@ std::string CommandBufferSubState::GetDebugLabelRegion(uint32_t label_command_i,
 }
 
 bool CommandBufferSubState::PreProcess(const Location &loc) {
+    VkDeviceSize pp_total_size = 0;
+    for (const auto &[pp_addr, pp_size] : post_process_buffers) {
+        pp_total_size += pp_size;
+    }
+
+    pp_total_size /= 1024;
+
+    VVL_TracyPlot("Post Process CB total size (kB)", int64_t(pp_total_size));
+
     bool succeeded = descriptor::UpdateDescriptorStateSSBO(state_, *this, loc);
     if (!succeeded) {
         return false;
