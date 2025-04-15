@@ -341,6 +341,36 @@
                                         }
                                     ]
                                 }
+                            ],
+                            "messages": [
+                                {
+                                    "key": "validate_core_msg0",
+                                    "title": "The Validation layer is going to be slow",
+                                    "version": 1,
+                                    "description": "Both 'Core validation' and 'GPU-assisted validation' are enabled. This is going to require a lot of CPU resource causing the Vulkan application to run very slowly.",
+                                    "informative": "Are you sure you want to enable 'Core Validation'?",
+                                    "severity": "CRITICAL",
+                                    "conditions": [
+                                        { "setting": { "key": "validate_core", "value": true }},
+                                        { "setting": { "key": "gpuav_enable", "value": true }}
+                                    ],
+                                    "actions": {
+                                        "default": "BUTTON0",
+                                        "BUTTON0": {
+                                            "type": "OK",
+                                            "settings": [
+                                                { "key": "validate_core", "value": true },
+                                                { "key": "gpuav_enable", "value": true }
+                                            ]
+                                        },
+                                        "BUTTON1": {
+                                            "type": "CANCEL",
+                                            "settings": [
+                                                { "key": "validate_core", "value": false }
+                                            ]
+                                        }
+                                    }
+                                }
                             ]
                         },
                         {
@@ -539,6 +569,65 @@
                                         "settings": [
                                             { "key": "printf_enable", "value": true }
                                         ]
+                                    }
+                                }
+                            ],
+                            "messages": [
+                                {
+                                    "key": "printf_enable_msg0",
+                                    "title": "Enabling 'Debug Printf' but 'Limit Duplicated Messages' is enabled",
+                                    "version": 1,
+                                    "description": "'Limit Duplicated Messages' also sets the maximum number of messages 'Debug printf' is allowed to log",
+                                    "informative": "Are you sure you want to continue and disable 'Limit Duplicated Messages'?",
+                                    "severity": "WARNING",
+                                    "conditions": [
+                                        { "setting": { "key": "printf_enable", "value": true }},
+                                        { "setting": { "key": "enable_message_limit", "value": true }}
+                                    ],
+                                    "actions": {
+                                        "default": "BUTTON0",
+                                        "BUTTON0": {
+                                            "type": "OK",
+                                            "settings": [
+                                                { "key": "printf_enable", "value": true },
+                                                { "key": "enable_message_limit", "value": false }
+                                            ]
+                                        },
+                                        "BUTTON1": {
+                                            "type": "CANCEL",
+                                            "settings": [
+                                                { "key": "printf_enable", "value": false }
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    "key": "printf_enable_msg1",
+                                    "title": "Enabling 'Debug Printf' but 'Redirect Printf messages to stdout' is disabled'",
+                                    "version": 1,
+                                    "description": "???.",
+                                    "informative": "Are you sure you want to continue and enable 'Redirect Printf messages to stdout' too?",
+                                    "severity": "WARNING",
+                                    "conditions": [
+                                        { "setting": { "key": "printf_enable", "value": true }},
+                                        { "setting": { "key": "printf_to_stdout", "value": false }},
+                                        { "setting": { "key": "report_flags", "value": ["info"]}, "operator": "NOT" }
+                                    ],
+                                    "actions": {
+                                        "default": "BUTTON0",
+                                        "BUTTON0": {
+                                            "type": "OK",
+                                            "settings": [
+                                                { "key": "printf_enable", "value": true },
+                                                { "key": "printf_to_stdout", "value": true }
+                                            ]
+                                        },
+                                        "BUTTON1": {
+                                            "type": "CANCEL",
+                                            "settings": [
+                                                { "key": "printf_enable", "value": false }
+                                            ]
+                                        }
                                     }
                                 }
                             ]
@@ -968,6 +1057,36 @@
                                             }
                                         }
                                     ]
+                                }
+                            ],
+                            "messages": [
+                                {
+                                    "key": "gpuav_enable_msg0",
+                                    "title": "The Validation layer is going to be slow",
+                                    "version": 1,
+                                    "description": "Both 'Core validation' and 'GPU-assisted validation' are enabled. This is going to require a lot of CPU resource causing the Vulkan application to run very slowly.",
+                                    "informative": "Are you sure you want to enable 'GPU Assisted Validation'?",
+                                    "severity": "CRITICAL",
+                                    "conditions": [
+                                        { "setting": { "key": "validate_core", "value": true }},
+                                        { "setting": { "key": "gpuav_enable", "value": true }}
+                                    ],
+                                    "actions": {
+                                        "default": "BUTTON0",
+                                        "BUTTON0": {
+                                            "type": "OK",
+                                            "settings": [
+                                                { "key": "validate_core", "value": true },
+                                                { "key": "gpuav_enable", "value": true }
+                                            ]
+                                        },
+                                        "BUTTON1": {
+                                            "type": "CANCEL",
+                                            "settings": [
+                                                { "key": "gpuav_enable", "value": false }
+                                            ]
+                                        }
+                                    }
                                 }
                             ]
                         },
