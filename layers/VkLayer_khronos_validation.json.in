@@ -536,7 +536,37 @@
                                         "settings": [
                                             { "key": "printf_enable", "value": true }
                                         ]
-                                    }
+                                    },
+                                    "messages": [
+                                        {
+                                            "key": "printf_enable_msg2",
+                                            "title": "Warning: Debug Printf without info level message severity flag",
+                                            "version": 1,
+                                            "description": "Enabling Debug Printf output redirection to the debug callback, but info level message severity is disabled, so printf message won't be shown.",
+                                            "informative": "Do you want to enable info level messages?",
+                                            "severity": "WARNING",
+                                            "conditions": [
+                                                { "setting": { "key": "printf_enable", "value": true }},
+                                                { "setting": { "key": "printf_to_stdout", "value": false }},
+                                                { "setting": { "key": "report_flags", "value": ["info"]}, "operator": "NOT" }
+                                            ],
+                                            "actions": {
+                                                "default": "BUTTON0",
+                                                "BUTTON0": {
+                                                    "type": "OK",
+                                                    "settings": [
+                                                        { "key": "report_flags", "value": ["info"]} // info needs to be appended to report flags
+                                                    ]
+                                                },
+                                                "BUTTON1": {
+                                                    "type": "CANCEL",
+                                                    "settings": [
+                                                        // don't do anything
+                                                    ]
+                                                }
+                                            }
+                                        }
+                                    ]
                                 },
                                 {
                                     "key": "printf_verbose",
@@ -603,10 +633,10 @@
                                 },
                                 {
                                     "key": "printf_enable_msg1",
-                                    "title": "Enabling 'Debug Printf' but 'Redirect Printf messages to stdout' is disabled'",
+                                    "title": "Warning: Debug Printf without info level message severity flag",
                                     "version": 1,
-                                    "description": "???.",
-                                    "informative": "Are you sure you want to continue and enable 'Redirect Printf messages to stdout' too?",
+                                    "description": "Enabling Debug Printf, with output directed to the debug callback, but info level message severity is disabled, so printf message won't be shown.",
+                                    "informative": "Do you want to enable info level messages?",
                                     "severity": "WARNING",
                                     "conditions": [
                                         { "setting": { "key": "printf_enable", "value": true }},
@@ -618,14 +648,13 @@
                                         "BUTTON0": {
                                             "type": "OK",
                                             "settings": [
-                                                { "key": "printf_enable", "value": true },
-                                                { "key": "printf_to_stdout", "value": true }
+                                                { "key": "report_flags", "value": ["info"]} // info needs to be appended to report flags
                                             ]
                                         },
                                         "BUTTON1": {
                                             "type": "CANCEL",
                                             "settings": [
-                                                { "key": "printf_enable", "value": false }
+                                                // don't do anything
                                             ]
                                         }
                                     }
@@ -1219,6 +1248,36 @@
                             "key": "info",
                             "label": "Info",
                             "description": "Report informational messages."
+                            "messages": [
+                                {
+                                    "key": "printf_enable_msg2",
+                                    "title": "Warning: Debug Printf without info level message severity flag",
+                                    "version": 1,
+                                    "description": "Disabling info level message severity is disabled, but Debug Printf output is directed to the debug callback, so printf message won't be shown.",
+                                    "informative": "Do you want to enable info level messages?",
+                                    "severity": "WARNING",
+                                    "conditions": [
+                                        { "setting": { "key": "printf_enable", "value": true }},
+                                        { "setting": { "key": "printf_to_stdout", "value": false }},
+                                        { "setting": { "key": "report_flags", "value": ["info"]}, "operator": "NOT" }
+                                    ],
+                                    "actions": {
+                                        "default": "BUTTON0",
+                                        "BUTTON0": {
+                                            "type": "OK",
+                                            "settings": [
+                                                { "key": "report_flags", "value": ["info"]} // info needs to be appended to report flags
+                                            ]
+                                        },
+                                        "BUTTON1": {
+                                            "type": "CANCEL",
+                                            "settings": [
+                                                // don't do anything
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
                         },
                         {
                             "key": "warn",
