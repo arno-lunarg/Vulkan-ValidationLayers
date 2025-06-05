@@ -22,6 +22,8 @@
 #include "utils/math_utils.h"
 #include <vulkan/utility/vk_struct_helper.hpp>
 
+#include "profiling/profiling.h"
+
 namespace gpuav {
 namespace vko {
 
@@ -223,13 +225,7 @@ GpuResourcesManager::GpuResourcesManager(Validator &gpuav) : gpuav_(gpuav) {
     {
         VmaAllocationCreateInfo alloc_ci = {};
         alloc_ci.usage = VMA_MEMORY_USAGE_AUTO;
-        alloc_ci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-        host_cached_buffer_cache_.Create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, alloc_ci);
-    }
-
-    {
-        VmaAllocationCreateInfo alloc_ci = {};
-        alloc_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        alloc_ci.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
         device_local_buffer_cache_.Create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                                               VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                           alloc_ci);
@@ -277,6 +273,7 @@ VkDescriptorSet GpuResourcesManager::GetManagedDescriptorSet(VkDescriptorSetLayo
 constexpr VkDeviceSize buffer_address_alignment = 128;
 
 vko::BufferRange GpuResourcesManager::GetHostVisibleBufferRange(VkDeviceSize size) {
+    VVL_ZoneScoped;
     // Kind of arbitrary, considered "big enough"
     constexpr VkDeviceSize min_buffer_block_size = 4 * 1024;
     // Buffers are used as storage buffers, align to corresponding limit
@@ -285,24 +282,8 @@ vko::BufferRange GpuResourcesManager::GetHostVisibleBufferRange(VkDeviceSize siz
     return host_visible_buffer_cache_.GetBufferRange(gpuav_, size, alignment, min_buffer_block_size);
 }
 
-vko::BufferRange GpuResourcesManager::GetHostCachedBufferRange(VkDeviceSize size) {
-    // Kind of arbitrary, considered "big enough"
-    constexpr VkDeviceSize min_buffer_block_size = 4 * 1024;
-    // Buffers are used as storage buffers, align to corresponding limit
-    const VkDeviceSize alignment =
-        std::max<VkDeviceSize>(gpuav_.phys_dev_props.limits.minStorageBufferOffsetAlignment, buffer_address_alignment);
-    return host_cached_buffer_cache_.GetBufferRange(gpuav_, size, alignment, min_buffer_block_size);
-}
-
-void GpuResourcesManager::FlushAllocation(const vko::BufferRange &buffer_range) {
-    vmaFlushAllocation(gpuav_.vma_allocator_, buffer_range.vma_alloc, 0, VK_WHOLE_SIZE);
-}
-
-void GpuResourcesManager::InvalidateAllocation(const vko::BufferRange &buffer_range) {
-    vmaInvalidateAllocation(gpuav_.vma_allocator_, buffer_range.vma_alloc, 0, VK_WHOLE_SIZE);
-}
-
 vko::BufferRange GpuResourcesManager::GetDeviceLocalBufferRange(VkDeviceSize size) {
+    VVL_ZoneScoped;
     // Kind of arbitrary, considered "big enough"
     constexpr VkDeviceSize min_buffer_block_size = 4 * 1024;
     // Buffers are used as storage buffers, align to corresponding limit
@@ -312,6 +293,7 @@ vko::BufferRange GpuResourcesManager::GetDeviceLocalBufferRange(VkDeviceSize siz
 }
 
 vko::BufferRange GpuResourcesManager::GetDeviceLocalIndirectBufferRange(VkDeviceSize size) {
+    VVL_ZoneScoped;
     // Kind of arbitrary, considered "big enough"
     constexpr VkDeviceSize min_buffer_block_size = 4 * 1024;
     // Buffers are used as storage buffers, align to corresponding limit
@@ -326,7 +308,6 @@ void GpuResourcesManager::ReturnResources() {
     }
 
     host_visible_buffer_cache_.ReturnBuffers();
-    host_cached_buffer_cache_.ReturnBuffers();
     device_local_buffer_cache_.ReturnBuffers();
     device_local_indirect_buffer_cache_.ReturnBuffers();
 }
@@ -341,9 +322,19 @@ void GpuResourcesManager::DestroyResources() {
     cache_layouts_to_sets_.clear();
 
     host_visible_buffer_cache_.DestroyBuffers();
-    host_cached_buffer_cache_.DestroyBuffers();
     device_local_buffer_cache_.DestroyBuffers();
     device_local_indirect_buffer_cache_.DestroyBuffers();
+
+    VmaBudget budgets[VK_MAX_MEMORY_HEAPS] = {};
+    vmaGetHeapBudgets(gpuav_.vma_allocator_, budgets);
+    constexpr std::array<const char*, 3> heap_names = {{ 
+        "heap_0 (kB)",
+        "heap_1 (kB)",
+        "heap_2 (kB)"
+    }};
+    for (uint32_t heap_i = 0; heap_i < 3; ++heap_i) {
+        VVL_TracyPlot(heap_names[heap_i], int64_t(budgets[heap_i].statistics.blockBytes / 1024));
+    }
 }
 
 void GpuResourcesManager::BufferCache::Create(VkBufferUsageFlags buffer_usage_flags, const VmaAllocationCreateInfo allocation_ci) {
@@ -355,13 +346,17 @@ GpuResourcesManager::BufferCache::~BufferCache() { DestroyBuffers(); }
 
 vko::BufferRange GpuResourcesManager::BufferCache::GetBufferRange(Validator &gpuav, VkDeviceSize byte_size, VkDeviceSize alignment,
                                                                   VkDeviceSize min_buffer_block_byte_size) {
+    VVL_ZoneScoped;
     // Try to find a cached buffer block big enough to sub-allocate from it
     if (total_available_byte_size_ >= byte_size) {
+        VVL_ZoneScopedN("BufferCache::GetBufferRange cache lookup");
         for (size_t i = 0; i < cached_buffers_blocks_.size(); ++i) {
             const size_t cached_buffer_i = (next_avail_buffer_pos_hint_ + i) % cached_buffers_blocks_.size();
             CachedBufferBlock &cached_buffer = cached_buffers_blocks_[cached_buffer_i];
 
-            // Is there enough space in the current cached buffer to fit the aligned sub-allocation?
+            // VVL_TracyMessageStream("cached buffer block | total range: " << vvl::string_range(cached_buffer.total_range) << " -
+            // used: " << vvl::string_range(cached_buffer.used_range));
+            //  Is there enough space in the current cached buffer to fit the aligned sub-allocation?
             const VkDeviceSize aligned_free_range_begin = Align(cached_buffer.used_range.end, alignment);
             const vvl::range<VkDeviceSize> aligned_free_range = {aligned_free_range_begin, cached_buffer.total_range.end};
             if (aligned_free_range.non_empty() && aligned_free_range.size() >= byte_size) {
@@ -392,12 +387,8 @@ vko::BufferRange GpuResourcesManager::BufferCache::GetBufferRange(Validator &gpu
                     offset_address = cached_buffer.buffer.Address() + returned_range.begin;
                 }
 
-                return {cached_buffer.buffer.VkHandle(),
-                        returned_range.begin,
-                        returned_range.size(),
-                        offset_mapped_ptr,
-                        offset_address,
-                        cached_buffer.buffer.Allocation()};
+                return {cached_buffer.buffer.VkHandle(), returned_range.begin, returned_range.size(), offset_mapped_ptr,
+                        offset_address};
             }
         }
     }
@@ -413,26 +404,34 @@ vko::BufferRange GpuResourcesManager::BufferCache::GetBufferRange(Validator &gpu
     }
     CachedBufferBlock cached_buffer_block{buffer, {0, buffer_ci.size}, {0, byte_size}};
     cached_buffers_blocks_.emplace_back(cached_buffer_block);
+    total_available_byte_size_ += buffer_ci.size - byte_size;
 
-    total_available_byte_size_ += buffer_ci.size;
+    VmaBudget budgets[VK_MAX_MEMORY_HEAPS] = {};
+    vmaGetHeapBudgets(gpuav.vma_allocator_, budgets);
+    constexpr std::array<const char*, 3> heap_names = {{ 
+        "heap_0 (kB)",
+        "heap_1 (kB)",
+        "heap_2 (kB)"
+    }};
+    for (uint32_t heap_i = 0; heap_i < 3; ++heap_i) {
+        VVL_TracyPlot(heap_names[heap_i], int64_t(budgets[heap_i].statistics.blockBytes / 1024));
+    }
 
-    return {buffer.VkHandle(),
-            cached_buffer_block.used_range.begin,
-            cached_buffer_block.used_range.size(),
-            cached_buffer_block.buffer.GetMappedPtr(),
-            cached_buffer_block.buffer.Address(),
-            cached_buffer_block.buffer.Allocation()};
+    return {buffer.VkHandle(), cached_buffer_block.used_range.begin, cached_buffer_block.used_range.size(),
+            cached_buffer_block.buffer.GetMappedPtr(), cached_buffer_block.buffer.Address()};
 }
 
 void GpuResourcesManager::BufferCache::ReturnBuffers() {
+    VVL_TracyPlot("BufferCache::ReturnBuffers", int64_t(1));
     total_available_byte_size_ = 0;
     for (CachedBufferBlock &cached_buffer_block : cached_buffers_blocks_) {
-        cached_buffer_block.used_range = {0, cached_buffer_block.total_range.end};
+        cached_buffer_block.used_range = {0, 0};
         total_available_byte_size_ += cached_buffer_block.total_range.size();
     }
 }
 
 void GpuResourcesManager::BufferCache::DestroyBuffers() {
+    VVL_TracyPlot("BufferCache::DestroyBuffers", int64_t(1));
     for (CachedBufferBlock &cached_buffer_block : cached_buffers_blocks_) {
         cached_buffer_block.buffer.Destroy();
     }

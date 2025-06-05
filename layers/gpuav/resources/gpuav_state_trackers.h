@@ -61,10 +61,13 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
         stdext::inplace_function<bool(Validator &gpuav, CommandBufferSubState &cb,
                                       const CommandBufferSubState::LabelLogging &label_logging, const Location &loc),
                                  64>;
-    using OnCommandBufferSubmission = stdext::inplace_function<OnCommandBufferCompletion(
-        Validator &gpuav, CommandBufferSubState &cb, VkCommandBuffer per_submission_cb)>;
+    using OnPreCommandBufferSubmission =
+        stdext::inplace_function<void(Validator &gpuav, CommandBufferSubState &cb, VkCommandBuffer per_pre_submission_cb)>;
+    using OnPostCommandBufferSubmission =
+        stdext::inplace_function<void(Validator &gpuav, CommandBufferSubState &cb, VkCommandBuffer per_post_submission_cb)>;
     std::vector<OnInstrumentionDescSetUpdate> on_instrumentation_desc_set_update_functions;
-    std::vector<OnCommandBufferSubmission> on_cb_submission_functions;
+    std::vector<OnPreCommandBufferSubmission> on_pre_cb_submission_functions;
+    std::vector<OnPostCommandBufferSubmission> on_post_cb_submission_functions;
     std::vector<OnCommandBufferCompletion> on_cb_completion_functions;
 
     vko::SharedResourcesCache shared_resources_cache;
@@ -84,8 +87,9 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     CommandBufferSubState(Validator &gpuav, vvl::CommandBuffer &cb);
     ~CommandBufferSubState();
 
-    [[nodiscard]] bool PreProcess(QueueSubState &queue, const Location &loc);
-    void PostProcess(VkQueue queue, const std::vector<std::string> &initial_label_stack, const Location &loc);
+    [[nodiscard]] bool PreSubmit(QueueSubState &queue, const Location &loc);
+    [[nodiscard]] bool PostSubmit(QueueSubState &queue, const Location &loc);
+    void OnCompletion(VkQueue queue, const std::vector<std::string> &initial_label_stack, const Location &loc);
 
     const VkDescriptorSetLayout &GetInstrumentationDescriptorSetLayout() const {
         assert(instrumentation_desc_set_layout_ != VK_NULL_HANDLE);
@@ -201,7 +205,7 @@ class QueueSubState : public vvl::QueueSubState {
     virtual ~QueueSubState();
 
     void PreSubmit(std::vector<vvl::QueueSubmission> &submissions) override;
-    void PostSubmit(vvl::QueueSubmission &) override;
+    void PostSubmit(std::deque<vvl::QueueSubmission> &submissions) override;
     void Retire(vvl::QueueSubmission &) override;
 
     vko::SharedResourcesCache shared_resources_cache;

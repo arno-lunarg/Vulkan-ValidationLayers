@@ -466,9 +466,11 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit(VkQueue queue, uint32_t submitCount, 
             if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
         }
     }
+
     RecordObject record_obj(vvl::Func::vkQueueSubmit);
     {
         VVL_ZoneScopedN("PreCallRecord_vkQueueSubmit");
+        VVL_TracyVkNamedZoneStart(GetTracyVkCtx(), queue, "gpu_QueueSubmit_PreCallRecord", pre_record_submit_gpu_zone);
         for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordQueueSubmit]) {
             if (!vo) {
                 continue;
@@ -476,18 +478,14 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit(VkQueue queue, uint32_t submitCount, 
             auto lock = vo->WriteLock();
             vo->PreCallRecordQueueSubmit(queue, submitCount, pSubmits, fence, record_obj);
         }
+        VVL_TracyVkNamedZoneEnd(pre_record_submit_gpu_zone, queue);
     }
     VkResult result;
     {
         VVL_ZoneScopedN("Dispatch_vkQueueSubmit");
-
-        VVL_TracyVkNamedZoneStart(GetTracyVkCtx(), queue, "gpu_QueueSubmit", submit_gpu_zone);
+        VVL_TracyVkNamedZoneStart(GetTracyVkCtx(), queue, "gpu_QueueSubmit_Dispatch", dispatch_submit_gpu_zone);
         result = device_dispatch->QueueSubmit(queue, submitCount, pSubmits, fence);
-
-        VVL_TracyVkNamedZoneEnd(submit_gpu_zone, queue);
-#if defined(VVL_TRACY_GPU)
-        TracyVkCollector::TrySubmitCollectCb(queue);
-#endif
+        VVL_TracyVkNamedZoneEnd(dispatch_submit_gpu_zone, queue);
     }
     record_obj.result = result;
     {
@@ -498,6 +496,7 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit(VkQueue queue, uint32_t submitCount, 
                 vo->is_device_lost = true;
             }
         }
+        VVL_TracyVkNamedZoneStart(GetTracyVkCtx(), queue, "gpu_QueueSubmit_PostCallRecord", post_record_submit_gpu_zone);
         for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordQueueSubmit]) {
             if (!vo) {
                 continue;
@@ -505,7 +504,13 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit(VkQueue queue, uint32_t submitCount, 
             auto lock = vo->WriteLock();
             vo->PostCallRecordQueueSubmit(queue, submitCount, pSubmits, fence, record_obj);
         }
+        VVL_TracyVkNamedZoneEnd(post_record_submit_gpu_zone, queue);
     }
+
+#if defined(VVL_TRACY_GPU)
+    TracyVkCollector::TrySubmitCollectCb(queue);
+#endif
+
     return result;
 }
 
