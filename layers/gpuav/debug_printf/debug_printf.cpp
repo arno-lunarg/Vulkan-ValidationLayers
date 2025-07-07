@@ -25,6 +25,7 @@
 #include "gpuav/core/gpuav.h"
 #include "state_tracker/shader_instruction.h"
 #include "error_message/spirv_logging.h"
+#include "utils/math_utils.h"
 
 #include <iostream>
 
@@ -436,6 +437,9 @@ void RegisterDebugPrintf(Validator &gpuav, CommandBufferSubState &cb_state) {
         }
         for (DebugPrintfBufferInfo &printf_buffer_info : debug_printf_cb_state->buffer_infos) {
             auto printf_output_ptr = (char *)printf_buffer_info.output_mem_buffer.offset_mapped_ptr;
+            std::cout << "printf_buffer_info.output_mem_buffer.offset_address: "
+                      << printf_buffer_info.output_mem_buffer.offset_address << std::endl;
+            LogWords("printf_output_ptr", printf_output_ptr, 8);
             debug_printf::AnalyzeAndGenerateMessage(gpuav, cb.VkHandle(), printf_buffer_info, (uint32_t *)printf_output_ptr, loc);
         }
         return true;

@@ -19,6 +19,7 @@
 #include "gpuav/resources/gpuav_state_trackers.h"
 #include "gpuav/resources/gpuav_vulkan_objects.h"
 #include "gpuav/shaders/root_node.h"
+#include "utils/math_utils.h"
 
 namespace gpuav {
 
@@ -62,6 +63,9 @@ void RegisterBufferDeviceAddressValidation(Validator& gpuav, CommandBufferSubSta
         *bda_table_ranges_u32_ptr = (uint32_t)bda_ranges_count;
         gpuav.device_state->GetBufferAddressRanges((vvl::DeviceState::BufferAddressRange*)(bda_table_ranges_u32_ptr + 2));
         cb.gpu_resources_manager.FlushAllocation(bda_table);
+
+        std::cout << "bda_table.offset_address: " << bda_table.offset_address << std::endl;
+        LogWords("bda_table_ranges_u32_ptr", bda_table_ranges_u32_ptr, bda_ranges_count + 2);
 
         // Fill a GPU buffer with a pointer to the BDA table
         vko::BufferRange bda_table_ptr = cb.gpu_resources_manager.GetHostVisibleBufferRange(sizeof(VkDeviceAddress));

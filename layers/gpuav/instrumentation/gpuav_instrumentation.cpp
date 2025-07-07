@@ -37,6 +37,7 @@
 #include "state_tracker/pipeline_state.h"
 #include "state_tracker/shader_module.h"
 #include "utils/action_command_utils.h"
+#include "utils/math_utils.h"
 
 #include <iostream>
 
@@ -365,6 +366,8 @@ void UpdateInstrumentationDescSet(Validator &gpuav, CommandBufferSubState &cb_st
     wds.pBufferInfo = &dbi;
 
     DispatchUpdateDescriptorSets(gpuav.device, 1, &wds, 0, nullptr);
+    std::cout << "root_node_ptr: " << root_node_ptr_buffer_range.offset_address << std::endl;
+    LogWords("root_node_ptr", root_node_ptr, sizeof(glsl::RootNode) / sizeof(uint32_t));
 #if 0
     std::cout << "root_node_ptr:\n---\n";
     std::cout << "root_node_ptr: " << std::hex << "0x" << root_node_ptr_buffer_range.offset_address << std::endl;

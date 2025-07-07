@@ -25,6 +25,7 @@
 #include "gpuav/shaders/gpuav_error_header.h"
 #include "gpuav/resources/gpuav_vulkan_objects.h"
 #include "gpuav/validation_cmd/gpuav_draw.h"
+#include "utils/math_utils.h"
 
 #include "profiling/profiling.h"
 
@@ -307,6 +308,11 @@ void CommandBufferSubState::OnCompletion(VkQueue queue, const std::vector<std::s
 
     {
         auto error_output_buffer_ptr = (uint32_t *)error_output_buffer_range_.offset_mapped_ptr;
+
+        std::cout << "error_output_buffer_range_.offset_address: " << error_output_buffer_range_.offset_address << std::endl;
+        LogWords("error_output_buffer_range_.offset_mapped_ptr", error_output_buffer_range_.offset_mapped_ptr, 16);
+        std::cout << "cmd_errors_counts_buffer_.Address(): " << cmd_errors_counts_buffer_.Address() << std::endl;
+        LogWords("cmd_errors_counts_buffer_", cmd_errors_counts_buffer_.GetMappedPtr(), 16);
 
         // The second word in the debug output buffer is the number of words that would have
         // been written by the shader instrumentation, if there was enough room in the buffer we provided.

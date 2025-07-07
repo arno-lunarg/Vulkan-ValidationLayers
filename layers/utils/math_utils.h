@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
+#include <iostream>
 
 #ifdef WIN32
 #include <intrin.h>  // For __lzcnt()
@@ -146,4 +147,16 @@ static inline VkDeviceSize SafeDivision(VkDeviceSize dividend, VkDeviceSize divi
         result = dividend / divisor;
     }
     return result;
+}
+
+inline void LogWords(const char *name, const void *p, size_t n) {
+    auto p_u32 = (const uint32_t *)p;
+    std::cout << name << ": [ ";
+    for (size_t i = 0; i < n; ++i) {
+        std::cout << p_u32[i];
+        if ((i + 1) < n) {
+            std::cout << ", ";
+        }
+    }
+    std::cout << " ]\n";
 }
