@@ -58,11 +58,13 @@ TEST_F(NegativeGpuAVBufferDeviceAddress, ReadBeforePointerPushConstant) {
     vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
 
     vkt::Buffer buffer(*m_device, 64, 0, vkt::device_address);
-    VkDeviceAddress u_info_ptr = buffer.Address();
     // Will dereference the wrong ptr address
-    VkDeviceAddress push_constants[2] = {u_info_ptr - 16, 4};
-    vk::CmdPushConstants(m_command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_constants), push_constants);
-
+    const VkDeviceAddress push_constants_addr = buffer.Address() - 16;
+    vk::CmdPushConstants(m_command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress),
+                         &push_constants_addr);
+    const uint32_t push_constant_n_writes = 4;
+    vk::CmdPushConstants(m_command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(VkDeviceAddress), sizeof(uint32_t),
+                         &push_constant_n_writes);
     vk::CmdDraw(m_command_buffer, 3, 1, 0, 0);
     m_command_buffer.EndRenderPass();
     m_command_buffer.End();
