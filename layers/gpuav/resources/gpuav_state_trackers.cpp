@@ -63,6 +63,11 @@ void CommandBufferSubState::AllocateResources(const Location &loc) {
             return;
         }
 
+        debug_buffer = gpu_resources_manager.GetHostVisibleBufferRange(16 * sizeof(uint64_t));
+        if (debug_buffer.buffer == VK_NULL_HANDLE) {
+            return;
+        }
+
         memset(error_output_buffer_range_.offset_mapped_ptr, 0, (size_t)error_output_buffer_range_.size);
         ((uint32_t *)error_output_buffer_range_.offset_mapped_ptr)[cst::error_output_buffer_size_offset] =
             (uint32_t)error_output_buffer_range_.size;
@@ -298,6 +303,8 @@ bool CommandBufferSubState::NeedsPostProcess() { return error_output_buffer_rang
 // For the given command buffer, map its debug data buffers and read their contents for analysis.
 void CommandBufferSubState::OnCompletion(VkQueue queue, const std::vector<std::string> &initial_label_stack, const Location &loc) {
     VVL_ZoneScoped;
+
+    LogQWords("debug_buffer", debug_buffer.offset_mapped_ptr, 12);
 
     // CommandBuffer::Destroy can happen on an other thread,
     // so when getting here after acquiring command buffer's lock,

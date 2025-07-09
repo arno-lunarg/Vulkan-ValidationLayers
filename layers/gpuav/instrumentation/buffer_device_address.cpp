@@ -64,13 +64,16 @@ void RegisterBufferDeviceAddressValidation(Validator& gpuav, CommandBufferSubSta
         gpuav.device_state->GetBufferAddressRanges((vvl::DeviceState::BufferAddressRange*)(bda_table_ranges_u32_ptr + 2));
         cb.gpu_resources_manager.FlushAllocation(bda_table);
 
-        std::cout << "bda_table.offset_address: " << bda_table.offset_address << std::endl;
-        LogWords("bda_table_ranges_u32_ptr", bda_table_ranges_u32_ptr, bda_ranges_count + 2);
+        std::cout << "bda_table (the actual ranges) address: " << bda_table.offset_address << std::endl;
+        LogWords("bda_table (the actual ranges) first two u32", bda_table_ranges_u32_ptr, 2);
+        LogQWords("bda_table (the actual ranges) first two u32, ranges", bda_table_ranges_u32_ptr + 2, 2 * bda_ranges_count);
 
         // Fill a GPU buffer with a pointer to the BDA table
         vko::BufferRange bda_table_ptr = cb.gpu_resources_manager.GetHostVisibleBufferRange(sizeof(VkDeviceAddress));
         *(VkDeviceAddress*)bda_table_ptr.offset_mapped_ptr = bda_table.offset_address;
-        std::cout << "bda_table_ptr.offset_address: " << bda_table_ptr.offset_address << std::endl;
+        std::cout << "Buffer address, of buffer holding address to bda_table: " << bda_table_ptr.offset_address << std::endl;
+        std::cout << "(above buffer CONTENT is copied INTO bda_cb_state->bda_ranges_snapshot_ptr, or root_node->bda_input_buffer)"
+                  << std::endl;
 
         // Dispatch a copy command, copying the per CB submission BDA table pointer to the BDA table pointer created at
         // "on_instrumentation_desc_set_update_functions" time, so that CB submission accesses correct BDA snapshot.

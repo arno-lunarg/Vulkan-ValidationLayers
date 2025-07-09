@@ -366,11 +366,19 @@ void UpdateInstrumentationDescSet(Validator &gpuav, CommandBufferSubState &cb_st
     wds.pBufferInfo = &dbi;
 
     DispatchUpdateDescriptorSets(gpuav.device, 1, &wds, 0, nullptr);
+
+    dbi.buffer = cb_state.debug_buffer.buffer;
+    dbi.offset = cb_state.debug_buffer.offset;
+    dbi.range = cb_state.debug_buffer.size;
+    wds.dstBinding = glsl::kBindingDebugLog;
+
+    DispatchUpdateDescriptorSets(gpuav.device, 1, &wds, 0, nullptr);
+
     std::cout << "root_node_ptr: " << root_node_ptr_buffer_range.offset_address << std::endl;
     LogWords("root_node_ptr", root_node_ptr, sizeof(glsl::RootNode) / sizeof(uint32_t));
-#if 0
-    std::cout << "root_node_ptr:\n---\n";
-    std::cout << "root_node_ptr: " << std::hex << "0x" << root_node_ptr_buffer_range.offset_address << std::endl;
+#if 1
+    std::cout << "root_node debug log:\n---\n";
+    std::cout << "root_node: " << std::hex << "0x" << root_node_struct_buffer_range.offset_address << std::endl;
     std::cout << "root_node_ptr->debug_printf_buffer: " << std::hex << "0x" << root_node_ptr->debug_printf_buffer << std::endl;
     std::cout << "root_node_ptr->inst_errors_buffer: " << std::hex << "0x" << root_node_ptr->inst_errors_buffer << std::endl;
     std::cout << "root_node_ptr->inst_action_index_buffer: " << std::hex << "0x" << root_node_ptr->inst_action_index_buffer
@@ -442,7 +450,7 @@ void PreCallSetupShaderInstrumentationResources(Validator &gpuav, CommandBufferS
 
     // Pathetic way of trying to make sure we take care of updating all
     // bindings of the instrumentation descriptor set
-    assert(gpuav.instrumentation_bindings_.size() == 1);
+    assert(gpuav.instrumentation_bindings_.size() == 2);
 
     InstrumentationErrorBlob instrumentation_error_blob;
     instrumentation_error_blob.operation_index = (bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS)  ? cb_state.draw_index

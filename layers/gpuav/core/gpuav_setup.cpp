@@ -205,6 +205,8 @@ void Validator::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const L
     instrumentation_bindings_ = {
         // Root Node Address
         {glsl::kBindingInstRootNode, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
+        // Debug buffer
+        {glsl::kBindingDebugLog, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
     };
 
     // TODO - Now that GPU-AV and DebugPrintf are merged, we should just have a single FinishDeviceSetup if possible (or at least

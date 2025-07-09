@@ -135,6 +135,8 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     // Used to limit the number of errors a single command can emit.
     vko::Buffer cmd_errors_counts_buffer_;
 
+    vko::BufferRange debug_buffer;
+
   private:
     void AllocateResources(const Location &loc);
     void ResetCBState(bool should_destroy);

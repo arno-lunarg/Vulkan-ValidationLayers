@@ -47,6 +47,7 @@ const uint kLinkShaderId = 0x0DEAD001;
 const int kInstDefaultDescriptorSet = 1;
 
 const int kBindingInstRootNode = 0;
+const int kBindingDebugLog = 1;
 
 // Validation pipelines
 // ---

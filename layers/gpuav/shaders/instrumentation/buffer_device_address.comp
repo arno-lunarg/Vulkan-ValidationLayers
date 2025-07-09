@@ -59,6 +59,20 @@ bool inst_buffer_device_address_range(
     const uint access_type,
     const uint access_byte_size)
 {
+    debug_buffer[0] = uvec2(root_node);
+    debug_buffer[1] = uvec2(root_node.debug_printf_buffer);
+    debug_buffer[2] = uvec2(root_node.inst_errors_buffer);
+    debug_buffer[3] = uvec2(root_node.inst_action_index_buffer);
+    debug_buffer[4] = uvec2(root_node.inst_cmd_resource_index_buffer);
+    debug_buffer[5] = uvec2(root_node.inst_cmd_errors_count_buffer);
+
+    debug_buffer[6] = uvec2(root_node.vertex_attribute_fetch_limits_buffer);
+    debug_buffer[7] = uvec2(root_node.bda_input_buffer);
+    debug_buffer[8] = uvec2(root_node.post_process_ssbo);  
+    debug_buffer[9] = uvec2(root_node.bound_desc_sets_state_ssbo);
+    
+    debug_buffer[10] = uvec2(root_node.bda_input_buffer.bda_ranges_ptr);
+    
     const Range cache_range = root_node.bda_input_buffer.bda_ranges_ptr.ranges[index_cache];
     if (addr >= cache_range.begin && ((addr + access_byte_size) <= cache_range.end)) {
         return true;

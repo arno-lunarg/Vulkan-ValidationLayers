@@ -93,6 +93,7 @@ BUFFER_ADDR_STRUCT(RootNode) {
 
 #ifndef __cplusplus
 layout(set = kInstDefaultDescriptorSet, binding = kBindingInstRootNode, std430) buffer RootNodeBuffer { RootNode root_node; };
+layout(set = kInstDefaultDescriptorSet, binding = kBindingDebugLog, std430) buffer DebugBuffer { uvec2 debug_buffer[]; };
 #endif
 
 #ifdef __cplusplus
