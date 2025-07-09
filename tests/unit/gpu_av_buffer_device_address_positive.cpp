@@ -23,7 +23,10 @@ void GpuAVBufferDeviceAddressTest::InitGpuVUBufferDeviceAddress(bool safe_mode) 
     AddRequiredFeature(vkt::Feature::bufferDeviceAddress);
     AddRequiredFeature(vkt::Feature::shaderInt64);
 
-    RETURN_IF_SKIP(InitGpuAvFramework({}, safe_mode));
+    VkBool32 bda_switch = VK_TRUE;
+    VkLayerSettingEXT bda_setting = {OBJECT_LAYER_NAME, "gpuav_buffer_address_oob", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1,
+                                     &bda_switch};
+    RETURN_IF_SKIP(InitGpuAvFramework({bda_setting}, safe_mode));
     RETURN_IF_SKIP(InitState());
 }
 

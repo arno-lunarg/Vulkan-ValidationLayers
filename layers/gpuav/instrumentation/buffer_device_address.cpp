@@ -70,6 +70,7 @@ void RegisterBufferDeviceAddressValidation(Validator& gpuav, CommandBufferSubSta
         // Fill a GPU buffer with a pointer to the BDA table
         vko::BufferRange bda_table_ptr = cb.gpu_resources_manager.GetHostVisibleBufferRange(sizeof(VkDeviceAddress));
         *(VkDeviceAddress*)bda_table_ptr.offset_mapped_ptr = bda_table.offset_address;
+        std::cout << "bda_table_ptr.offset_address: " << bda_table_ptr.offset_address << std::endl;
 
         // Dispatch a copy command, copying the per CB submission BDA table pointer to the BDA table pointer created at
         // "on_instrumentation_desc_set_update_functions" time, so that CB submission accesses correct BDA snapshot.
