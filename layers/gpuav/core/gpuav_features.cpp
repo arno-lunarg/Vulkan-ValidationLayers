@@ -144,7 +144,7 @@ void Instance::AddFeatures(VkPhysicalDevice physical_device, vku::safe_VkDeviceC
         }
     }
 
-    if (supported_memory_model_feature.vulkanMemoryModel) {
+    if (supported_memory_model_feature.vulkanMemoryModel && supported_memory_model_feature.vulkanMemoryModelDeviceScope) {
         auto add_memory_model = [this, &loc, modified_create_info]() {
             if (auto *mm_features = const_cast<VkPhysicalDeviceVulkanMemoryModelFeatures *>(
                     vku::FindStructInPNextChain<VkPhysicalDeviceVulkanMemoryModelFeatures>(modified_create_info))) {
