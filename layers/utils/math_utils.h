@@ -151,24 +151,18 @@ static inline VkDeviceSize SafeDivision(VkDeviceSize dividend, VkDeviceSize divi
 
 inline void LogWords(const char *name, const void *p, size_t n) {
     auto p_u32 = (const uint32_t *)p;
-    std::cout << name << ": [ ";
+    std::cout << name << ":\n";
     for (size_t i = 0; i < n; ++i) {
-        std::cout << std::hex << p_u32[i];
-        if ((i + 1) < n) {
-            std::cout << ", ";
-        }
+        std::cout << std::dec << i << ": " << std::hex << p_u32[i] << '\n';
     }
-    std::cout << " ]\n";
+    std::cout << "\n";
 }
 
 inline void LogQWords(const char *name, const void *p, size_t n) {
     auto p_u64 = (const uint64_t *)p;
-    std::cout << name << ": [ ";
+    std::cout << name << ":\n";
     for (size_t i = 0; i < n; ++i) {
-        std::cout << std::hex << p_u64[i];
-        if ((i + 1) < n) {
-            std::cout << ", ";
-        }
+        std::cout << std::dec << i << ": " << std::hex << p_u64[i] << '\n';
     }
-    std::cout << " ]\n";
+    std::cout << "\n";
 }

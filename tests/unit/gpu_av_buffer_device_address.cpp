@@ -1803,6 +1803,8 @@ TEST_F(NegativeGpuAVBufferDeviceAddress, MemoryModelOperand2) {
     in_buffer_ptr[0] = bda_buffer.Address();
     in_buffer_ptr[1] = 0;  // set SSBO.a to be zero
 
+    std::cout << "Test address (128 * sizeof(uint32_t) offset): " << std::hex << bda_buffer.Address() + 128 * sizeof(uint32_t) << std::dec << std::endl;
+
     CreateComputePipelineHelper pipe(*this);
     pipe.dsl_bindings_[0] = {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr};
     pipe.cs_ = VkShaderObj(this, shader_source, VK_SHADER_STAGE_COMPUTE_BIT, SPV_ENV_VULKAN_1_2);

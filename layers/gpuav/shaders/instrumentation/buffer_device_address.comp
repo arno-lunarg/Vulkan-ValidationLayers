@@ -72,8 +72,20 @@ bool inst_buffer_device_address_range(
     debug_buffer[9] = uvec2(root_node.bound_desc_sets_state_ssbo);
     
     debug_buffer[10] = uvec2(root_node.bda_input_buffer.bda_ranges_ptr);
+    debug_buffer[11] = uvec2(index_cache, 0);
+    debug_buffer[12] = uvec2(root_node.bda_input_buffer.bda_ranges_ptr.ranges_count, 0);
+    debug_buffer[13] = uvec2(root_node.bda_input_buffer.bda_ranges_ptr.ranges[0].begin, 0);
+    debug_buffer[14] = uvec2(root_node.bda_input_buffer.bda_ranges_ptr.ranges[0].end, 0);
     
+
     const Range cache_range = root_node.bda_input_buffer.bda_ranges_ptr.ranges[index_cache];
+
+    debug_buffer[21] = uvec2(uint(addr), uint(addr >> 32u));
+    debug_buffer[22] = uvec2(uint(cache_range.begin), uint(cache_range.begin >> 32u));
+    debug_buffer[23] = uvec2(uint(cache_range.end), uint(cache_range.end >> 32u));
+    debug_buffer[24] = uvec2(access_byte_size, 0);
+
+
     if (addr >= cache_range.begin && ((addr + access_byte_size) <= cache_range.end)) {
         return true;
     }
@@ -95,6 +107,9 @@ bool inst_buffer_device_address_range(
             // addr >= range.begin && addr + access_byte_size <= range.end
             // ==> valid access
             index_cache = range_i;
+            debug_buffer[18] = uvec2(uint(addr), uint(addr >> 32u));
+            debug_buffer[19] = uvec2(access_byte_size, 0);
+            debug_buffer[20] = uvec2(uint(range.end), uint(range.end >> 32u));
             return true;
         }
         // Address is above current range, proceed to next range.
@@ -108,6 +123,7 @@ bool inst_buffer_device_address_range(
                         uint(addr >> 32u),
                         access_type | access_byte_size
                     );
+    debug_buffer[15] = uvec2(uint(addr), uint(addr >> 32u));
     return false;
 }
 
