@@ -25,11 +25,11 @@
 namespace gpuav {
 namespace spirv {
 
-const static OfflineModule kOfflineModule = {instrumentation_post_process_descriptor_index_comp,
-                                             instrumentation_post_process_descriptor_index_comp_size};
+const static OfflineModule kOfflineModule = {instrumentation_post_process_descriptor_indexing_comp,
+                                             instrumentation_post_process_descriptor_indexing_comp_size};
 
 const static OfflineFunction kOfflineFunction = {"inst_post_process_descriptor_index",
-                                                 instrumentation_post_process_descriptor_index_comp_function_0_offset};
+                                                 instrumentation_post_process_descriptor_indexing_comp_function_0_offset};
 
 PostProcessDescriptorIndexingPass::PostProcessDescriptorIndexingPass(Module& module) : Pass(module, kOfflineModule) {
     module.use_bda_ = true;
@@ -47,13 +47,18 @@ void PostProcessDescriptorIndexingPass::CreateFunctionCall(BasicBlock& block, In
     const Constant& binding_layout_offset = module_.type_manager_.GetConstantUInt32(binding_layout.start);
     const Constant& variable_id_constant = module_.type_manager_.GetConstantUInt32(meta.variable_id);
 
+    // #ARNO_TODO Can we get this variable_id from meta.target_instruction->GetPositionIndex() ?
+
+    const uint32_t instruction_position = meta.target_instruction->GetPositionIndex();
+    const uint32_t instruction_position_id = module_.type_manager_.CreateConstantUInt32(instruction_position).Id();
+
     const uint32_t function_result = module_.TakeNextId();
     const uint32_t function_def = GetLinkFunctionId();
     const uint32_t void_type = module_.type_manager_.GetTypeVoid().Id();
 
     block.CreateInstruction(spv::OpFunctionCall,
                             {void_type, function_result, function_def, set_constant.Id(), binding_constant.Id(),
-                             descriptor_index_id, binding_layout_offset.Id(), variable_id_constant.Id()},
+                             descriptor_index_id, binding_layout_offset.Id(), variable_id_constant.Id(), instruction_position_id},
                             inst_it);
 }
 

@@ -59,7 +59,7 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                 out_buffer_info.range = pp_cb_state->last_desc_set_binding_to_post_process_buffers_lut.size;
             } else {
                 // Eventually, no descriptor set was bound in command buffer.
-                // Instrumenation descriptor set is already defined at this point and needs a binding,
+                // Instrumentation descriptor set is already defined at this point and needs a binding,
                 // so just provide a dummy buffer
                 if (dummy_buffer_range.buffer == VK_NULL_HANDLE) {
                     dummy_buffer_range = cb.gpu_resources_manager.GetDeviceLocalBufferRange(64);
@@ -194,8 +194,8 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                             const uint32_t shader_id = slot.meta_data & glsl::kShaderIdMask;
                             const uint32_t error_logger_i = (slot.meta_data & glsl::kPostProcessMetaMaskErrorLoggerIndex) >>
                                                             glsl::kPostProcessMetaShiftErrorLoggerIndex;
-                            descriptor_access_map[shader_id].emplace_back(
-                                DescriptorAccess{binding, descriptor_i, slot.variable_id, error_logger_i});
+                            descriptor_access_map[shader_id].emplace_back(DescriptorAccess{
+                                binding, descriptor_i, slot.variable_id, slot.instruction_position, error_logger_i});
                         }
                     }
                 }

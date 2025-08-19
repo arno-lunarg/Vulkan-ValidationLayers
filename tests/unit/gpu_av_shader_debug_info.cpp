@@ -2312,3 +2312,97 @@ TEST_F(NegativeGpuAVShaderDebugInfo, ShaderInternalId) {
     m_default_queue->SubmitAndWait(m_command_buffer);
     m_errorMonitor->VerifyFound();
 }
+
+TEST_F(NegativeGpuAVShaderDebugInfo, PostProcessingUpdateAfterBindImageViewTypeMismatch) {
+    TEST_DESCRIPTION("Test that post processing can retrieve shader debug info");
+
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    RETURN_IF_SKIP(InitGpuAvFramework());
+    AddRequiredFeature(vkt::Feature::descriptorBindingSampledImageUpdateAfterBind);
+    RETURN_IF_SKIP(InitState());
+    InitRenderTarget();
+
+    char const *fs_source = R"(
+               OpCapability Shader
+          %2 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %main "main" %color %s
+               OpExecutionMode %main OriginUpperLeft
+          %1 = OpString "pp.frag"
+               OpSource GLSL 450 %1 "        #version 450
+        layout(set=0, binding=0) uniform sampler3D s;
+        layout(location=0) out vec4 color;
+        void main() {
+           color = texture(s, vec3(0));
+        }"
+               OpName %main "main"
+               OpName %color "color"
+               OpName %s "s"
+               OpModuleProcessed "client vulkan100"
+               OpModuleProcessed "target-env spirv1.5"
+               OpModuleProcessed "target-env vulkan1.2"
+               OpModuleProcessed "entry-point main"
+               OpDecorate %color Location 0
+               OpDecorate %s Binding 0
+               OpDecorate %s DescriptorSet 0
+       %void = OpTypeVoid
+          %4 = OpTypeFunction %void
+      %float = OpTypeFloat 32
+    %v4float = OpTypeVector %float 4
+%_ptr_Output_v4float = OpTypePointer Output %v4float
+      %color = OpVariable %_ptr_Output_v4float Output
+         %11 = OpTypeImage %float 3D 0 0 0 1 Unknown
+         %12 = OpTypeSampledImage %11
+%_ptr_UniformConstant_12 = OpTypePointer UniformConstant %12
+          %s = OpVariable %_ptr_UniformConstant_12 UniformConstant
+    %v3float = OpTypeVector %float 3
+    %float_0 = OpConstant %float 0
+         %18 = OpConstantComposite %v3float %float_0 %float_0 %float_0
+               OpLine %1 4 19
+       %main = OpFunction %void None %4
+          %6 = OpLabel
+               OpLine %1 5 0
+         %15 = OpLoad %12 %s
+         %19 = OpImageSampleImplicitLod %v4float %15 %18
+               OpStore %color %19
+               OpLine %1 6 0
+               OpReturn
+               OpFunctionEnd
+    )";
+    VkShaderObj vs(this, kVertexDrawPassthroughGlsl, VK_SHADER_STAGE_VERTEX_BIT);
+    VkShaderObj fs(this, fs_source, VK_SHADER_STAGE_FRAGMENT_BIT, SPV_ENV_VULKAN_1_2, SPV_SOURCE_ASM);
+
+    vkt::Image image(*m_device, 16, 16, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
+    image.SetLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    vkt::ImageView image_view = image.CreateView();
+    vkt::Sampler sampler(*m_device, SafeSaneSamplerCreateInfo());
+
+    OneOffDescriptorIndexingSet descriptor_set(m_device, {{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL,
+                                                           nullptr, VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT}});
+    const vkt::PipelineLayout pipeline_layout(*m_device, {&descriptor_set.layout_});
+
+    descriptor_set.WriteDescriptorImageInfo(0, image_view, sampler);
+    descriptor_set.UpdateDescriptorSets();
+
+    CreatePipelineHelper pipe(*this);
+    pipe.shader_stages_ = {vs.GetStageCreateInfo(), fs.GetStageCreateInfo()};
+    pipe.gp_ci_.layout = pipeline_layout;
+    pipe.CreateGraphicsPipeline();
+
+    m_command_buffer.Begin();
+    m_command_buffer.BeginRenderPass(m_renderPassBeginInfo);
+
+    vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
+    vk::CmdBindDescriptorSets(m_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_set.set_, 0,
+                              nullptr);
+
+    vk::CmdDraw(m_command_buffer, 3, 1, 0, 0);
+
+    m_command_buffer.EndRenderPass();
+    m_command_buffer.End();
+
+    m_errorMonitor->SetDesiredError("VUID-vkCmdDraw-viewType-07752");
+    m_default_queue->SubmitAndWait(m_command_buffer);
+    m_errorMonitor->VerifyFound();
+}

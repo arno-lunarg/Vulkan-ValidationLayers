@@ -55,10 +55,10 @@ extern const uint32_t instrumentation_log_error_comp[];
 // These offset match the function in the order they are declared in the GLSL source
 extern const uint32_t instrumentation_log_error_comp_function_0_offset;
 
-extern const uint32_t instrumentation_post_process_descriptor_index_comp_size;
-extern const uint32_t instrumentation_post_process_descriptor_index_comp[];
+extern const uint32_t instrumentation_post_process_descriptor_indexing_comp_size;
+extern const uint32_t instrumentation_post_process_descriptor_indexing_comp[];
 // These offset match the function in the order they are declared in the GLSL source
-extern const uint32_t instrumentation_post_process_descriptor_index_comp_function_0_offset;
+extern const uint32_t instrumentation_post_process_descriptor_indexing_comp_function_0_offset;
 
 extern const uint32_t instrumentation_ray_query_comp_size;
 extern const uint32_t instrumentation_ray_query_comp[];
