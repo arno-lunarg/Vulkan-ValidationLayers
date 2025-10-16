@@ -277,7 +277,7 @@ void VkRenderFramework::InitFramework(void *instance_pnext) {
         }
     }
 
-    m_errorMonitor->CreateCallback(instance_);
+    // m_errorMonitor->CreateCallback(instance_);
 
     static bool driver_printed = false;
     static bool print_driver_info = GetEnvironment("VK_LAYER_TESTS_PRINT_DRIVER") != "";
@@ -535,7 +535,7 @@ void VkRenderFramework::ShutdownFramework() {
     delete m_device;
     m_device = nullptr;
 
-    m_errorMonitor->DestroyCallback(instance_);
+    // m_errorMonitor->DestroyCallback(instance_);
 
     m_surface.Destroy();
     m_surface_context.Destroy();

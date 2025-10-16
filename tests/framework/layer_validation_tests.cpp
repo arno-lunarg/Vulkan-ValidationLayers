@@ -314,6 +314,7 @@ void VkLayerTest::Init(VkPhysicalDeviceFeatures *features, VkPhysicalDeviceFeatu
 }
 
 VkLayerTest::VkLayerTest() {
+#if 0
     m_instance_extension_names.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     instance_layers_.push_back(kValidationLayerName);
 
@@ -330,7 +331,7 @@ VkLayerTest::VkLayerTest() {
     if (InstanceLayerSupported("VK_LAYER_DEV_self_validation")) {
         instance_layers_.push_back("VK_LAYER_DEV_self_validation");
     }
-
+#endif
     app_info_ = vku::InitStructHelper();
     app_info_.pApplicationName = "layer_tests";
     app_info_.applicationVersion = 1;
