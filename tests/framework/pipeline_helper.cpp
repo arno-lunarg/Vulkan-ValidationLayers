@@ -76,6 +76,7 @@ CreatePipelineHelper::CreatePipelineHelper(VkLayerTest &test, void *pNext) : lay
     cb_ci_.logicOpEnable = VK_FALSE;
     cb_ci_.logicOp = VK_LOGIC_OP_COPY;  // ignored if enable is VK_FALSE above
     cb_ci_.attachmentCount = 1;
+    cb_attachments_.colorWriteMask = 15;
     cb_ci_.pAttachments = &cb_attachments_;
     for (int i = 0; i < 4; i++) {
         cb_ci_.blendConstants[0] = 1.0F;
