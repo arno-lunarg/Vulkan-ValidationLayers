@@ -355,6 +355,49 @@ void Instance::AddFeatures(VkPhysicalDevice physical_device, vku::safe_VkDeviceC
             }
         }
     }
+
+    if (gpuav_settings.validate_build_acceleration_structures) {
+        if (!IsExtensionAvailable(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, available_extensions)) {
+            InternalWarning(
+                kNoObjects, loc,
+                "VK_KHR_acceleration_structure not is available, turning validate acceleration structures build commands off.");
+        } else {
+            // Do not try to add VK_KHR_acceleration_structure extension,
+            // it makes no sense
+            VkPhysicalDeviceAccelerationStructureFeaturesKHR supported_as_features = vku::InitStructHelper();
+            VkPhysicalDeviceFeatures2 as_features_2 = vku::InitStructHelper(&supported_as_features);
+            DispatchGetPhysicalDeviceFeatures2(physical_device, &as_features_2);
+
+            if (!supported_as_features.accelerationStructureIndirectBuild) {
+                InternalWarning(
+                    kNoObjects, loc,
+                    "VkPhysicalDeviceAccelerationStructureFeaturesKHR::accelerationStructureIndirectBuild feature is not "
+                    "available, GPU-AV cannot validate acceleration structures build commands.");
+                gpuav_settings.validate_build_acceleration_structures = false;
+            } else {
+                if (auto *as_features = const_cast<VkPhysicalDeviceAccelerationStructureFeaturesKHR *>(
+                        vku::FindStructInPNextChain<VkPhysicalDeviceAccelerationStructureFeaturesKHR>(modified_create_info))) {
+                    if (!as_features->accelerationStructureIndirectBuild &&
+                        supported_as_features.accelerationStructureIndirectBuild) {
+                        AdjustmentWarning(
+                            kNoObjects, loc,
+                            "Forcing VkPhysicalDeviceAccelerationStructureFeaturesKHR::accelerationStructureIndirectBuild to "
+                            "VK_TRUE.");
+                        as_features->accelerationStructureIndirectBuild = VK_TRUE;
+                    }
+                } else {
+                    VkPhysicalDeviceAccelerationStructureFeaturesKHR new_as_features = vku::InitStructHelper();
+                    if (supported_as_features.accelerationStructureIndirectBuild) {
+                        AdjustmentWarning(kNoObjects, loc,
+                                          "Adding a VkPhysicalDeviceAccelerationStructureFeaturesKHR to pNext with "
+                                          "accelerationStructureIndirectBuild set to VK_TRUE.");
+                        new_as_features.accelerationStructureIndirectBuild = VK_TRUE;
+                    }
+                    vku::AddToPnext(*modified_create_info, new_as_features);
+                }
+            }
+        }
+    }
 }
 
 }  // namespace gpuav
