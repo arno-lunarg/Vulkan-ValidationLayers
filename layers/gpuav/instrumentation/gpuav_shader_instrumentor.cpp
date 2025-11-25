@@ -197,7 +197,7 @@ void GpuShaderInstrumentor::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateI
 
     // Update feature and extension state based on changes made to the create info.
     GetEnabledDeviceFeatures(pCreateInfo, &modified_features, api_version);
-    modified_extensions = DeviceExtensions(extensions, api_version, pCreateInfo);
+    modified_extensions = DeviceExtensions(extensions, api_version, std::nullopt, pCreateInfo);
 
     // Check hard requirements for GPU-AV against what we enabled.
     if (!modified_features.fragmentStoresAndAtomics) {

@@ -67,6 +67,11 @@ class BestPracticesOutputGenerator(BaseGenerator):
             'vkQueueSubmit',
         ]
 
+        self.call_base_class_list = [
+            'vkEnumeratePhysicalDevices',
+            'vkEnumeratePhysicalDeviceGroups'
+        ]
+
         self.extension_info = dict()
 
     def generate(self):
@@ -184,6 +189,8 @@ class BestPracticesOutputGenerator(BaseGenerator):
                 params = ', '.join(paramList)
                 out.append(f'PostCallRecord{command.alias[2:]}({params});')
             else:
+                if command.name in self.call_base_class_list:
+                    out.append(f'BaseClass::PostCallRecord{command.name[2:]}({params});\n')
                 if command.name in self.manual_postcallrecord_list:
                     out.append(f'ManualPostCallRecord{command.name[2:]}({params});\n')
 

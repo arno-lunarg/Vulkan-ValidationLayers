@@ -139,7 +139,7 @@ class DispatchTableHelperOutputGenerator(BaseGenerator):
                 if (promoted_api != GetApiPromotedMap().end()) {
                     auto info = GetDeviceVersionMap(promoted_api->second.c_str());
                     assert(info.state);
-                    return (device_extension_info->*(info.state) == kEnabledByCreateinfo);
+                    return ((device_extension_info->*(info.state)).ext_enabled == kEnabledByCreateinfo);
                 }
 
                 auto has_ext = GetApiExtensionMap().find(api_name);
@@ -149,8 +149,8 @@ class DispatchTableHelperOutputGenerator(BaseGenerator):
                     for (const auto& extension : has_ext->second) {
                         auto info = device_extension_info->GetInfo(extension);
                         if (info.state) {
-                            if (device_extension_info->*(info.state) == kEnabledByCreateinfo ||
-                                device_extension_info->*(info.state) == kEnabledByInteraction) {
+                            if ((device_extension_info->*(info.state)).ext_enabled == kEnabledByCreateinfo ||
+                                (device_extension_info->*(info.state)).ext_enabled == kEnabledByInteraction) {
                                 return true;
                             }
                         }
@@ -161,8 +161,8 @@ class DispatchTableHelperOutputGenerator(BaseGenerator):
                     for (const auto& extension : has_ext->second) {
                         auto info = instance_extension_info->GetInfo(extension);
                         if (info.state) {
-                            if (instance_extension_info->*(info.state) == kEnabledByCreateinfo ||
-                                instance_extension_info->*(info.state) == kEnabledByInteraction) {
+                            if ((instance_extension_info->*(info.state)).ext_enabled == kEnabledByCreateinfo ||
+                                (instance_extension_info->*(info.state)).ext_enabled == kEnabledByInteraction) {
                                 return true;
                             }
                         }

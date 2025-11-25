@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2025 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -105,11 +105,10 @@ bool Instance::ValidateExtensionReqs(const ExtensionState &extensions, const cha
     return skip;
 }
 
-ExtEnabled ExtensionStateByName(const DeviceExtensions &extensions, vvl::Extension extension) {
+ExtStatus ExtensionStateByName(const DeviceExtensions &extensions, vvl::Extension extension) {
     auto info = extensions.GetInfo(extension);
     // unknown extensions can't be enabled in extension struct
-    ExtEnabled state = info.state ? extensions.*(info.state) : kNotSupported;
-    return state;
+    return info.state ? (extensions.*(info.state)) : ExtStatus{};
 }
 
 bool Instance::PreCallValidateCreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
@@ -122,7 +121,7 @@ bool Instance::PreCallValidateCreateInstance(const VkInstanceCreateInfo *pCreate
     uint32_t local_api_version = (pCreateInfo->pApplicationInfo ? pCreateInfo->pApplicationInfo->apiVersion : VK_API_VERSION_1_0);
     // Create and use a local instance extension object, as an actual instance has not been created yet
     InstanceExtensions instance_extensions(local_api_version, pCreateInfo);
-    DeviceExtensions device_extensions(instance_extensions, local_api_version);
+    DeviceExtensions device_extensions(instance_extensions, local_api_version, std::nullopt);
     Context context(*this, error_obj, device_extensions);
 
     skip |= context.ValidateStructType(loc.dot(Field::pCreateInfo), pCreateInfo, VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, true,
@@ -277,77 +276,17 @@ bool Instance::PreCallValidateCreateInstance(const VkInstanceCreateInfo *pCreate
     return skip;
 }
 
-void Instance::CommonPostCallRecordEnumeratePhysicalDevice(const VkPhysicalDevice *phys_devices, const int count) {
-    // Assume phys_devices is valid
-    assert(phys_devices);
-    for (int i = 0; i < count; ++i) {
-        const auto &phys_device = phys_devices[i];
-        if (0 == physical_device_properties_map.count(phys_device)) {
-            auto phys_dev_props = new VkPhysicalDeviceProperties;
-            DispatchGetPhysicalDeviceProperties(phys_device, phys_dev_props);
-            physical_device_properties_map[phys_device] = phys_dev_props;
-
-            // Enumerate the Device Ext Properties to save the PhysicalDevice supported extension state
-            uint32_t ext_count = 0;
-
-            std::vector<VkExtensionProperties> ext_props{};
-            DispatchEnumerateDeviceExtensionProperties(phys_device, nullptr, &ext_count, nullptr);
-            ext_props.resize(ext_count);
-            DispatchEnumerateDeviceExtensionProperties(phys_device, nullptr, &ext_count, ext_props.data());
-
-            DeviceExtensions phys_dev_exts(extensions, phys_dev_props->apiVersion, ext_props);
-            physical_device_extensions[phys_device] = std::move(phys_dev_exts);
-        }
-    }
-}
-
-void Instance::PostCallRecordEnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalDeviceCount,
-                                                      VkPhysicalDevice *pPhysicalDevices, const RecordObject &record_obj) {
-    if ((VK_SUCCESS != record_obj.result) && (VK_INCOMPLETE != record_obj.result)) {
-        return;
-    }
-
-    if (pPhysicalDeviceCount && pPhysicalDevices) {
-        CommonPostCallRecordEnumeratePhysicalDevice(pPhysicalDevices, *pPhysicalDeviceCount);
-    }
-}
-
-void Instance::PostCallRecordEnumeratePhysicalDeviceGroups(VkInstance instance, uint32_t *pPhysicalDeviceGroupCount,
-                                                           VkPhysicalDeviceGroupProperties *pPhysicalDeviceGroupProperties,
-                                                           const RecordObject &record_obj) {
-    if ((VK_SUCCESS != record_obj.result) && (VK_INCOMPLETE != record_obj.result)) {
-        return;
-    }
-
-    if (pPhysicalDeviceGroupCount && pPhysicalDeviceGroupProperties) {
-        for (uint32_t i = 0; i < *pPhysicalDeviceGroupCount; i++) {
-            const auto &group = pPhysicalDeviceGroupProperties[i];
-            CommonPostCallRecordEnumeratePhysicalDevice(group.physicalDevices, group.physicalDeviceCount);
-        }
-    }
-}
-
 void Instance::PreCallRecordDestroyInstance(VkInstance instance, const VkAllocationCallbacks *pAllocator,
-                                            const RecordObject &record_obj) {
-    for (auto it = physical_device_properties_map.begin(); it != physical_device_properties_map.end();) {
-        delete (it->second);
-        it = physical_device_properties_map.erase(it);
-    }
-}
+                                            const RecordObject &record_obj) {}
 
 void Device::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const Location &loc) {
-    std::vector<VkExtensionProperties> ext_props{};
-    uint32_t ext_count = 0;
-    DispatchEnumerateDeviceExtensionProperties(physical_device, nullptr, &ext_count, nullptr);
-    ext_props.resize(ext_count);
-    DispatchEnumerateDeviceExtensionProperties(physical_device, nullptr, &ext_count, ext_props.data());
-    for (const auto &prop : ext_props) {
-        vvl::Extension extension = GetExtension(prop.extensionName);
-        if (extension == vvl::Extension::_VK_EXT_discard_rectangles) {
-            discard_rectangles_extension_version = prop.specVersion;
-        } else if (extension == vvl::Extension::_VK_NV_scissor_exclusive) {
-            scissor_exclusive_extension_version = prop.specVersion;
-        }
+    const DeviceExtensions &ext_props = instance->physical_device_extensions[physical_device];
+
+    if (IsExtSupported(ext_props.vk_ext_discard_rectangles)) {
+        discard_rectangles_extension_version = ext_props.vk_ext_discard_rectangles.spec_version;
+    }
+    if (IsExtSupported(ext_props.vk_nv_scissor_exclusive)) {
+        scissor_exclusive_extension_version = ext_props.vk_nv_scissor_exclusive.spec_version;
     }
 
     has_zero_queues = pCreateInfo->queueCreateInfoCount == 0;

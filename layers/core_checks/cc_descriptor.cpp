@@ -1359,7 +1359,7 @@ bool CoreChecks::ValidateImageUpdate(const vvl::ImageView &view_state, VkImageLa
         type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT) {
         struct ExtensionLayout {
             VkImageLayout layout;
-            ExtEnabled DeviceExtensions::*extension;
+            ExtStatus DeviceExtensions::*extension;
         };
         // Layouts allowed for all three descriptor types (sampled, combined, input attachment)
         const static std::array<VkImageLayout, 3> shared_layouts = {

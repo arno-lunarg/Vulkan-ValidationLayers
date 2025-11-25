@@ -107,6 +107,12 @@ class LayerChassisOutputGenerator(BaseGenerator):
         'vkGetPhysicalDeviceToolPropertiesEXT',
     )
 
+    no_postcallrecord_functions = (
+        # Custom logic needed
+        'vkEnumeratePhysicalDevices',
+        'vkEnumeratePhysicalDeviceGroups'
+    )
+
     def __init__(self):
         BaseGenerator.__init__(self)
 
@@ -178,7 +184,8 @@ class LayerChassisOutputGenerator(BaseGenerator):
             out.extend(guard_helper.add_guard(command.protect))
             out.append(f'        virtual bool PreCallValidate{command.name[2:]}({parameters}, const ErrorObject& error_obj) const {{ return false; }}\n')
             out.append(f'        virtual void PreCallRecord{command.name[2:]}({parameters}, const RecordObject& record_obj) {{}}\n')
-            out.append(f'        virtual void PostCallRecord{command.name[2:]}({parameters}, const RecordObject& record_obj) {{}}\n')
+            if command.name not in self.no_postcallrecord_functions:
+                out.append(f'        virtual void PostCallRecord{command.name[2:]}({parameters}, const RecordObject& record_obj) {{}}\n')
         out.extend(guard_helper.add_guard(None))
         self.write("".join(out))
 

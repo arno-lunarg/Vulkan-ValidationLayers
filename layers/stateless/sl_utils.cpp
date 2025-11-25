@@ -37,7 +37,7 @@ bool Instance::CheckPromotedApiAgainstVulkanVersion(VkPhysicalDevice pdev, const
     bool skip = false;
     const auto &target_pdev = physical_device_properties_map.find(pdev);
     if (target_pdev != physical_device_properties_map.end()) {
-        auto effective_api_version = std::min(APIVersion(target_pdev->second->apiVersion), api_version);
+        auto effective_api_version = std::min(APIVersion(target_pdev->second.apiVersion), api_version);
         if (effective_api_version < promoted_version) {
             skip |= LogError(
                 "UNASSIGNED-API-Version-Violation", instance, loc,
@@ -45,7 +45,7 @@ bool Instance::CheckPromotedApiAgainstVulkanVersion(VkPhysicalDevice pdev, const
                 "which is the minimum of version requested in pApplicationInfo (%s) and supported by this physical device (%s), "
                 "but this API was not promoted until version %s.",
                 StringAPIVersion(effective_api_version).c_str(), StringAPIVersion(api_version).c_str(),
-                StringAPIVersion(target_pdev->second->apiVersion).c_str(), StringAPIVersion(promoted_version).c_str());
+                StringAPIVersion(target_pdev->second.apiVersion).c_str(), StringAPIVersion(promoted_version).c_str());
         }
     }
     return skip;

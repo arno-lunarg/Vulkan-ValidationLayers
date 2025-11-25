@@ -272,13 +272,13 @@ class Instance : public HandleWrapper {
 #include "generated/dispatch_object_instance_methods.h"
 
     template <bool init = true, typename ExtProp>
-    void GetPhysicalDeviceExtProperties(VkPhysicalDevice gpu, ExtEnabled enabled, ExtProp* ext_prop) {
+    void GetPhysicalDeviceExtProperties(VkPhysicalDevice gpu, ExtStatus ext_status, ExtProp* ext_prop) {
         assert(ext_prop);
         // Extensions that use two calls to get properties don't want to init on the second call
         if constexpr (init) {
             *ext_prop = vku::InitStructHelper();
         }
-        if (IsExtEnabled(enabled)) {
+        if (IsExtEnabled(ext_status)) {
             VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(ext_prop);
             if (api_version >= VK_API_VERSION_1_1) {
                 GetPhysicalDeviceProperties2(gpu, &prop2);

@@ -89,21 +89,6 @@ bool bp_state::Instance::PreCallValidateCreateDevice(VkPhysicalDevice physicalDe
                 dev_api_name.c_str());
     }
 
-    std::vector<std::string> extension_names;
-    {
-        uint32_t property_count = 0;
-        if (DispatchEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &property_count, nullptr) == VK_SUCCESS) {
-            std::vector<VkExtensionProperties> property_list(property_count);
-            if (DispatchEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &property_count, property_list.data()) ==
-                VK_SUCCESS) {
-                extension_names.reserve(property_list.size());
-                for (const VkExtensionProperties& properties : property_list) {
-                    extension_names.emplace_back(properties.extensionName);
-                }
-            }
-        }
-    }
-
     for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
         const char* extension_name = pCreateInfo->ppEnabledExtensionNames[i];
         vvl::Extension extension = GetExtension(extension_name);
@@ -140,9 +125,10 @@ bool bp_state::Instance::PreCallValidateCreateDevice(VkPhysicalDevice physicalDe
     }
 
     const bool enabled_pageable_device_local_memory = IsExtEnabled(extensions.vk_ext_pageable_device_local_memory);
+    const DeviceExtensions& device_exts =
+        physical_device_extensions.at(physicalDevice);  // #ARNO_TODO here physical_device_extensions is uninitialized
     if (VendorCheckEnabled(kBPVendorNVIDIA) && !enabled_pageable_device_local_memory &&
-        std::find(extension_names.begin(), extension_names.end(), VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME) !=
-            extension_names.end()) {
+        IsExtSupported(device_exts.vk_ext_pageable_device_local_memory)) {
         skip |=
             LogPerformanceWarning("BestPractices-NVIDIA-CreateDevice-PageableDeviceLocalMemory", instance, error_obj.location,
                                   "%s called without pageable device local memory. "

@@ -205,7 +205,7 @@ class SpirvValidationHelperOutputGenerator(BaseGenerator):
             struct RequiredSpirvInfo {
                 uint32_t version;
                 FeaturePointer feature;
-                ExtEnabled DeviceExtensions::*extension;
+                ExtStatus DeviceExtensions::*extension;
                 const char* property; // For human readability and make some capabilities unique
             };
 

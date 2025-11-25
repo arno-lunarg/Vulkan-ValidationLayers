@@ -37,8 +37,8 @@ void MarkSupportedExtensionsAsNotEnabled(const std::vector<VkExtensionProperties
     for (size_t i = 0; i < supported_extensions.size(); i++) {
         vvl::Extension extension = GetExtension(supported_extensions[i].extensionName);
         auto &info = extensions.GetInfo(extension);
-        if (info.state && (extensions.*(info.state)) == kNotSupported) {
-            extensions.*(info.state) = kNotEnabled;
+        if (info.state && (extensions.*(info.state)).ext_enabled == kNotSupported) {
+            (extensions.*(info.state)).ext_enabled = kNotEnabled;
         }
     }
 }
@@ -52,13 +52,12 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
     // Setup the validation tables based on the application API version from the instance and the capabilities of the device driver
     api_version = std::min(APIVersion(device_properties.apiVersion), instance->api_version);
 
-    extensions = DeviceExtensions(instance->extensions, api_version, pCreateInfo);
-    uint32_t extension_count = 0u;
-    DispatchEnumerateDeviceExtensionProperties(physical_device, nullptr, &extension_count, nullptr);
-    std::vector<VkExtensionProperties> supported_extensions(extension_count);
-    DispatchEnumerateDeviceExtensionProperties(physical_device, nullptr, &extension_count, supported_extensions.data());
-    MarkSupportedExtensionsAsNotEnabled(supported_extensions, extensions);
-
+    std::vector<VkExtensionProperties> ext_props{};
+    uint32_t ext_count = 0;
+    DispatchEnumerateDeviceExtensionProperties(physical_device, nullptr, &ext_count, nullptr);
+    ext_props.resize(ext_count);
+    DispatchEnumerateDeviceExtensionProperties(physical_device, nullptr, &ext_count, ext_props.data());
+    extensions = DeviceExtensions(instance->extensions, api_version, ext_props, pCreateInfo);
     GetEnabledDeviceFeatures(pCreateInfo, &enabled_features, api_version);
 
     instance->GetPhysicalDeviceMemoryProperties(physical_device, &phys_dev_mem_props);
@@ -436,7 +435,8 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
                                              &phys_dev_ext_props.copy_memory_indirect_props);
 
     if (api_version >= VK_API_VERSION_1_1) {
-        instance->GetPhysicalDeviceExtProperties(physical_device, kEnabledByCreateinfo, &phys_dev_ext_props.subgroup_props);
+        const ExtStatus enabled_by_ci = {kEnabledByCreateinfo};
+        instance->GetPhysicalDeviceExtProperties(physical_device, enabled_by_ci, &phys_dev_ext_props.subgroup_props);
     }
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_extended_dynamic_state3,
                                              &phys_dev_ext_props.extended_dynamic_state3_props);
@@ -484,29 +484,13 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
 
     // None of these "check if supported" features are possible without first having gpdp2 first
     if (IsExtEnabled(extensions.vk_khr_get_physical_device_properties2)) {
-        uint32_t n_props = 0;
-        std::vector<VkExtensionProperties> props;
-        DispatchEnumerateDeviceExtensionProperties(physical_device, NULL, &n_props, NULL);
-        props.resize(n_props);
-        DispatchEnumerateDeviceExtensionProperties(physical_device, NULL, &n_props, props.data());
-
-        vvl::unordered_set<Extension> phys_dev_extensions;
-        for (const auto &ext_prop : props) {
-            phys_dev_extensions.insert(GetExtension(ext_prop.extensionName));
-        }
-
         // promoted to 1.3
-        special_supported.vk_khr_format_feature_flags2 =
-            api_version >= VK_API_VERSION_1_3 ||
-            phys_dev_extensions.find(Extension::_VK_KHR_format_feature_flags2) != phys_dev_extensions.end();
+        special_supported.vk_khr_format_feature_flags2 = extensions.vk_khr_format_feature_flags2.ext_enabled;
 
         // robustImageAccess is required if 1.3 or VK_EXT_image_robustness supported
-        special_supported.robust_image_access =
-            api_version >= VK_API_VERSION_1_3 ||
-            phys_dev_extensions.find(Extension::_VK_EXT_image_robustness) != phys_dev_extensions.end();
+        special_supported.robust_image_access = extensions.vk_ext_image_robustness.ext_enabled;
 
-        if (phys_dev_extensions.find(Extension::_VK_KHR_robustness2) != phys_dev_extensions.end() ||
-            phys_dev_extensions.find(Extension::_VK_EXT_robustness2) != phys_dev_extensions.end()) {
+        if (extensions.vk_khr_robustness2 || extensions.vk_ext_robustness2) {
             VkPhysicalDeviceRobustness2FeaturesKHR robustness_2_features = vku::InitStructHelper();
             VkPhysicalDeviceFeatures2 features2 = vku::InitStructHelper(&robustness_2_features);
             DispatchGetPhysicalDeviceFeatures2Helper(api_version, physical_device, &features2);
@@ -526,7 +510,7 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
                 vulkan_12_features.descriptorBindingStorageBufferUpdateAfterBind;
             special_supported.descriptor_binding_storage_image_uab =
                 vulkan_12_features.descriptorBindingStorageImageUpdateAfterBind;
-        } else if (phys_dev_extensions.find(Extension::_VK_EXT_descriptor_indexing) != phys_dev_extensions.end()) {
+        } else if (extensions.vk_ext_descriptor_indexing) {
             VkPhysicalDeviceDescriptorIndexingFeatures di_features = vku::InitStructHelper();
             VkPhysicalDeviceFeatures2 features2 = vku::InitStructHelper(&di_features);
             DispatchGetPhysicalDeviceFeatures2Helper(api_version, physical_device, &features2);
@@ -542,14 +526,14 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
             DispatchGetPhysicalDeviceFeatures2Helper(api_version, physical_device, &features2);
             special_supported.descriptor_binding_inline_uniform_buffer_uab =
                 vulkan_13_features.descriptorBindingInlineUniformBlockUpdateAfterBind;
-        } else if (phys_dev_extensions.find(Extension::_VK_EXT_inline_uniform_block) != phys_dev_extensions.end()) {
+        } else if (extensions.vk_ext_inline_uniform_block) {
             VkPhysicalDeviceInlineUniformBlockFeatures inline_ubo_features = vku::InitStructHelper();
             VkPhysicalDeviceFeatures2 features2 = vku::InitStructHelper(&inline_ubo_features);
             DispatchGetPhysicalDeviceFeatures2Helper(api_version, physical_device, &features2);
             special_supported.descriptor_binding_inline_uniform_buffer_uab =
                 inline_ubo_features.descriptorBindingInlineUniformBlockUpdateAfterBind;
         }
-        if (phys_dev_extensions.find(Extension::_VK_KHR_maintenance9) != phys_dev_extensions.end()) {
+        if (extensions.vk_khr_maintenance9) {
             VkPhysicalDeviceMaintenance9FeaturesKHR maintenance_9_features = vku::InitStructHelper();
             VkPhysicalDeviceFeatures2 features2 = vku::InitStructHelper(&maintenance_9_features);
             DispatchGetPhysicalDeviceFeatures2Helper(api_version, physical_device, &features2);
@@ -680,7 +664,7 @@ Instance::Instance(const VkInstanceCreateInfo *pCreateInfo) : HandleWrapper(new 
                                       VK_API_VERSION_MINOR(specified_version), 0);
 
     InstanceExtensions instance_extensions(specified_version, pCreateInfo);
-    extensions = DeviceExtensions(instance_extensions, api_version);
+    extensions = DeviceExtensions(instance_extensions, api_version, std::nullopt);
 
     debug_report->instance_pnext_chain = vku::SafePnextCopy(pCreateInfo->pNext);
     ActivateInstanceDebugCallbacks(debug_report);

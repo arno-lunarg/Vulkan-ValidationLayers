@@ -65,7 +65,7 @@ static vvl::Image::MemoryReqs GetMemoryRequirements(const vvl::DeviceState &dev_
                 VkMemoryRequirements2 mem_reqs2 = vku::InitStructHelper();
 
                 image_plane_req.planeAspect = aspects[i];
-                switch (dev_data.extensions.vk_khr_get_memory_requirements2) {
+                switch (dev_data.extensions.vk_khr_get_memory_requirements2.ext_enabled) {
                     case kEnabledByApiLevel:
                         DispatchGetImageMemoryRequirements2(dev_data.device, &mem_req_info2, &mem_reqs2);
                         break;

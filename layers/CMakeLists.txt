@@ -203,9 +203,15 @@ target_sources(vvl PRIVATE
     best_practices/bp_video.cpp
     best_practices/bp_wsi.cpp
     best_practices/best_practices_validation.h
-    chassis/chassis_modification_state.h
+    chassis/chassis.h
+    chassis/chassis_handle_data.h
     chassis/chassis_manual.cpp
+    chassis/chassis_modification_state.h
+    chassis/dispatch_object.h
     chassis/dispatch_object_manual.cpp
+    chassis/layer_object_id.h
+    chassis/validation_object.h
+    chassis/validation_object_instance_methods_manual.cpp
     containers/range.h
     containers/range_map.h
     core_checks/cc_android.cpp
@@ -261,6 +267,7 @@ target_sources(vvl PRIVATE
     ${API_TYPE}/generated/best_practices_device_methods.h
     ${API_TYPE}/generated/best_practices_instance_methods.h
     ${API_TYPE}/generated/chassis.cpp
+    ${API_TYPE}/generated/dispatch_functions.h
     ${API_TYPE}/generated/valid_enum_values.cpp
     ${API_TYPE}/generated/valid_enum_values.h
     ${API_TYPE}/generated/valid_flag_values.cpp

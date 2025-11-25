@@ -79,6 +79,7 @@ void bp_state::Instance::PostCallRecordCreateInstance(const VkInstanceCreateInfo
 void bp_state::Instance::PostCallRecordEnumeratePhysicalDevices(VkInstance instance, uint32_t* pPhysicalDeviceCount,
                                                                 VkPhysicalDevice* pPhysicalDevices,
                                                                 const RecordObject& record_obj) {
+    BaseClass::PostCallRecordEnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices, record_obj);
     bp_state::LogResult(*this, instance, record_obj);
 }
 
@@ -392,6 +393,8 @@ void BestPractices::PostCallRecordBindImageMemory2(VkDevice device, uint32_t bin
 void bp_state::Instance::PostCallRecordEnumeratePhysicalDeviceGroups(
     VkInstance instance, uint32_t* pPhysicalDeviceGroupCount, VkPhysicalDeviceGroupProperties* pPhysicalDeviceGroupProperties,
     const RecordObject& record_obj) {
+    BaseClass::PostCallRecordEnumeratePhysicalDeviceGroups(instance, pPhysicalDeviceGroupCount, pPhysicalDeviceGroupProperties,
+                                                           record_obj);
     bp_state::LogResult(*this, instance, record_obj);
 }
 

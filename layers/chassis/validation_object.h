@@ -89,6 +89,9 @@ class Instance : public Logger {
     vvl::dispatch::Instance* dispatch_instance_{};
 
     DeviceExtensions extensions;
+    vvl::unordered_map<VkPhysicalDevice, VkPhysicalDeviceProperties> physical_device_properties_map;
+    vvl::unordered_map<VkPhysicalDevice, DeviceExtensions> physical_device_extensions{};
+
     const GlobalSettings& global_settings;
     GpuAVSettings& gpuav_settings;
     const SyncValSettings& syncval_settings;
@@ -119,6 +122,12 @@ class Instance : public Logger {
                                            const RecordObject& record_obj, vku::safe_VkDeviceCreateInfo* modified_create_info) {
         PreCallRecordCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice, record_obj);
     }
+    virtual void PostCallRecordEnumeratePhysicalDevices(VkInstance instance, uint32_t* pPhysicalDeviceCount,
+                                                        VkPhysicalDevice* pPhysicalDevices, const RecordObject& record_obj);
+    virtual void PostCallRecordEnumeratePhysicalDeviceGroups(VkInstance instance, uint32_t* pPhysicalDeviceGroupCount,
+                                                             VkPhysicalDeviceGroupProperties* pPhysicalDeviceGroupProperties,
+                                                             const RecordObject& record_obj);
+    void CommonPostCallRecordEnumeratePhysicalDevice(const VkPhysicalDevice* phys_devices, const int count);
     void CopyDispatchState() { instance = dispatch_instance_->instance; }
     // Because this object was created before dispatch_instance_ can query for supported extensions, we must copy them afterwards here
     void CopyExtensions() { extensions = dispatch_instance_->extensions; }

@@ -49,8 +49,6 @@ virtual bool PreCallValidateEnumeratePhysicalDevices(VkInstance instance, uint32
 }
 virtual void PreCallRecordEnumeratePhysicalDevices(VkInstance instance, uint32_t* pPhysicalDeviceCount,
                                                    VkPhysicalDevice* pPhysicalDevices, const RecordObject& record_obj) {}
-virtual void PostCallRecordEnumeratePhysicalDevices(VkInstance instance, uint32_t* pPhysicalDeviceCount,
-                                                    VkPhysicalDevice* pPhysicalDevices, const RecordObject& record_obj) {}
 virtual bool PreCallValidateGetPhysicalDeviceFeatures(VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures* pFeatures,
                                                       const ErrorObject& error_obj) const {
     return false;
@@ -196,9 +194,6 @@ virtual bool PreCallValidateEnumeratePhysicalDeviceGroups(VkInstance instance, u
 virtual void PreCallRecordEnumeratePhysicalDeviceGroups(VkInstance instance, uint32_t* pPhysicalDeviceGroupCount,
                                                         VkPhysicalDeviceGroupProperties* pPhysicalDeviceGroupProperties,
                                                         const RecordObject& record_obj) {}
-virtual void PostCallRecordEnumeratePhysicalDeviceGroups(VkInstance instance, uint32_t* pPhysicalDeviceGroupCount,
-                                                         VkPhysicalDeviceGroupProperties* pPhysicalDeviceGroupProperties,
-                                                         const RecordObject& record_obj) {}
 virtual bool PreCallValidateGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures2* pFeatures,
                                                        const ErrorObject& error_obj) const {
     return false;

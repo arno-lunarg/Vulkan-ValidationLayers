@@ -20,34 +20,6 @@
 
 namespace gpuav {
 
-static std::vector<VkExtensionProperties> GetAvailableExtensions(VkPhysicalDevice physical_device) {
-    VkResult err;
-    uint32_t extension_count = 512;
-    std::vector<VkExtensionProperties> extensions(extension_count);
-    for (;;) {
-        err = DispatchEnumerateDeviceExtensionProperties(physical_device, nullptr, &extension_count, extensions.data());
-        if (err == VK_SUCCESS) {
-            extensions.resize(extension_count);
-            return extensions;
-        } else if (err == VK_INCOMPLETE) {
-            extension_count *= 2;  // wasn't enough space, increase it
-            extensions.resize(extension_count);
-        } else {
-            return {};
-        }
-    }
-}
-
-static bool IsExtensionAvailable(const char *extension_name, const std::vector<VkExtensionProperties> &available_extensions) {
-    for (const VkExtensionProperties &ext : available_extensions) {
-        if (strncmp(extension_name, ext.extensionName, VK_MAX_EXTENSION_NAME_SIZE) == 0) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 // We end up printing lots of warning for GPU-AV that really have no use for any object.
 // Instead of spamming with a VkInstance, just explicitly don't print anything
 static const VulkanTypedHandle kNoObjects;
@@ -109,7 +81,7 @@ void Instance::AddFeatures(VkPhysicalDevice physical_device, vku::safe_VkDeviceC
     }
 
     // Build extension list once
-    std::vector<VkExtensionProperties> available_extensions = GetAvailableExtensions(physical_device);
+    const DeviceExtensions &available_extensions = physical_device_extensions.at(physical_device);
 
     if (supported_timeline_feature.timelineSemaphore) {
         auto add_timeline_semaphore = [modified_create_info, &adjustment_warnings]() {
@@ -138,7 +110,9 @@ void Instance::AddFeatures(VkPhysicalDevice physical_device, vku::safe_VkDeviceC
             } else {
                 add_timeline_semaphore();
             }
-        } else if (IsExtensionAvailable(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME, available_extensions)) {
+        } else
+
+            if (IsExtSupported(available_extensions.vk_khr_timeline_semaphore)) {
             // Only adds if not found already
             vku::AddExtension(*modified_create_info, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
             add_timeline_semaphore();
@@ -184,7 +158,7 @@ void Instance::AddFeatures(VkPhysicalDevice physical_device, vku::safe_VkDeviceC
             } else {
                 add_memory_model();
             }
-        } else if (IsExtensionAvailable(VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME, available_extensions)) {
+        } else if (IsExtSupported(available_extensions.vk_khr_vulkan_memory_model)) {
             // Only adds if not found already
             vku::AddExtension(*modified_create_info, VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME);
             add_memory_model();
@@ -220,7 +194,7 @@ void Instance::AddFeatures(VkPhysicalDevice physical_device, vku::safe_VkDeviceC
             } else {
                 add_bda();
             }
-        } else if (IsExtensionAvailable(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME, available_extensions)) {
+        } else if (IsExtSupported(available_extensions.vk_khr_buffer_device_address)) {
             // Only adds if not found already
             vku::AddExtension(*modified_create_info, VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
             add_bda();
@@ -254,7 +228,7 @@ void Instance::AddFeatures(VkPhysicalDevice physical_device, vku::safe_VkDeviceC
             } else {
                 add_scalar();
             }
-        } else if (IsExtensionAvailable(VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME, available_extensions)) {
+        } else if (IsExtSupported(available_extensions.vk_ext_scalar_block_layout)) {
             // Only adds if not found already
             vku::AddExtension(*modified_create_info, VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME);
             add_scalar();
@@ -290,7 +264,7 @@ void Instance::AddFeatures(VkPhysicalDevice physical_device, vku::safe_VkDeviceC
             } else {
                 add_8bit_access();
             }
-        } else if (IsExtensionAvailable(VK_KHR_8BIT_STORAGE_EXTENSION_NAME, available_extensions)) {
+        } else if (IsExtSupported(available_extensions.vk_khr_8bit_storage)) {
             // Only adds if not found already
             vku::AddExtension(*modified_create_info, VK_KHR_8BIT_STORAGE_EXTENSION_NAME);
             add_8bit_access();
@@ -298,10 +272,10 @@ void Instance::AddFeatures(VkPhysicalDevice physical_device, vku::safe_VkDeviceC
     }
 
     if (gpuav_settings.debug_printf_enabled) {
-        if (!IsExtensionAvailable(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, available_extensions)) {
-            adjustment_warnings +=
-                "\tVK_KHR_shader_non_semantic_info is not available on selected device, Debug Printf may produce SPIR-V "
-                "that could fail to compile the shader\n";
+        if (!IsExtSupported(available_extensions.vk_khr_shader_non_semantic_info)) {
+            InternalWarning(kNoObjects, loc,
+                            "VK_KHR_shader_non_semantic_info is not available on selected device, Debug Printf may produce SPIR-V "
+                            "that could fail to compile the shader.");
         } else {
             vku::AddExtension(*modified_create_info, VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME);
         }
@@ -309,8 +283,8 @@ void Instance::AddFeatures(VkPhysicalDevice physical_device, vku::safe_VkDeviceC
 
     if (gpuav_settings.force_on_robustness &&
         (supported_robustness2_feature.robustBufferAccess2 || supported_robustness2_feature.robustImageAccess2)) {
-        const bool has_ext = IsExtensionAvailable(VK_EXT_ROBUSTNESS_2_EXTENSION_NAME, available_extensions);
-        const bool has_khr = IsExtensionAvailable(VK_KHR_ROBUSTNESS_2_EXTENSION_NAME, available_extensions);
+        const bool has_ext = IsExtSupported(available_extensions.vk_ext_robustness2);
+        const bool has_khr = IsExtSupported(available_extensions.vk_khr_robustness2);
         if (has_ext || has_khr) {
             // Only adds if not found already
             if (has_khr) {

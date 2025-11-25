@@ -318,10 +318,6 @@ class Instance : public vvl::base::Instance {
     using Field = vvl::Field;
 
   public:
-    vvl::unordered_map<VkPhysicalDevice, VkPhysicalDeviceProperties *> physical_device_properties_map;
-    vvl::unordered_map<VkPhysicalDevice, DeviceExtensions> physical_device_extensions{};
-    // We have a copy of this in Stateless and vvl::Instance, could move the base::Instance, but we don't have a way to
-
     Instance(vvl::dispatch::Instance *dispatch) : BaseClass(dispatch, LayerObjectTypeParameterValidation) {}
 
     bool OutputExtensionError(const Location &loc, const vvl::Extensions &exentsions) const;
@@ -346,13 +342,6 @@ class Instance : public vvl::base::Instance {
     bool PreCallValidateCreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
                                        VkInstance *pInstance, const ErrorObject &error_obj) const override;
 
-    void CommonPostCallRecordEnumeratePhysicalDevice(const VkPhysicalDevice *phys_devices, const int count);
-    void PostCallRecordEnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalDeviceCount,
-                                                VkPhysicalDevice *pPhysicalDevices, const RecordObject &record_obj) override;
-
-    void PostCallRecordEnumeratePhysicalDeviceGroups(VkInstance instance, uint32_t *pPhysicalDeviceGroupCount,
-                                                     VkPhysicalDeviceGroupProperties *pPhysicalDeviceGroupProperties,
-                                                     const RecordObject &record_obj) override;
     void PreCallRecordDestroyInstance(VkInstance instance, const VkAllocationCallbacks *pAllocator,
                                       const RecordObject &record_obj) override;
 

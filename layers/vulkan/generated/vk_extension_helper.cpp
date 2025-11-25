@@ -471,7 +471,7 @@ vvl::Extension GetExtension(std::string extension) {
     return (it == extension_map.end()) ? vvl::Extension::Empty : it->second;
 }
 
-const PromotedExtensionInfoMap& GetInstancePromotionInfoMap() {
+const PromotedExtensionInfoMap &GetInstancePromotionInfoMap() {
     static const PromotedExtensionInfoMap promoted_map = {
         {VK_API_VERSION_1_1,
          {"VK_VERSION_1_1",
@@ -487,7 +487,7 @@ const PromotedExtensionInfoMap& GetInstancePromotionInfoMap() {
     return promoted_map;
 }
 
-const PromotedExtensionInfoMap& GetDevicePromotionInfoMap() {
+const PromotedExtensionInfoMap &GetDevicePromotionInfoMap() {
     static const PromotedExtensionInfoMap promoted_map = {
         {VK_API_VERSION_1_1,
          {"VK_VERSION_1_1",
@@ -591,7 +591,7 @@ const PromotedExtensionInfoMap& GetDevicePromotionInfoMap() {
     return promoted_map;
 }
 
-const InstanceExtensions::Info& GetInstanceVersionMap(const char* version) {
+const InstanceExtensions::Info &GetInstanceVersionMap(const char *version) {
     static const InstanceExtensions::Info empty_info{nullptr, InstanceExtensions::RequirementVec()};
     static const vvl::unordered_map<std::string_view, InstanceExtensions::Info> version_map = {
         {"VK_VERSION_1_1", InstanceExtensions::Info(&InstanceExtensions::vk_feature_version_1_1, {})},
@@ -603,7 +603,7 @@ const InstanceExtensions::Info& GetInstanceVersionMap(const char* version) {
     return (info != version_map.cend()) ? info->second : empty_info;
 }
 
-const DeviceExtensions::Info& GetDeviceVersionMap(const char* version) {
+const DeviceExtensions::Info &GetDeviceVersionMap(const char *version) {
     static const DeviceExtensions::Info empty_info{nullptr, DeviceExtensions::RequirementVec()};
     static const vvl::unordered_map<std::string_view, DeviceExtensions::Info> version_map = {
         {"VK_VERSION_1_1", DeviceExtensions::Info(&DeviceExtensions::vk_feature_version_1_1, {})},
@@ -615,111 +615,91 @@ const DeviceExtensions::Info& GetDeviceVersionMap(const char* version) {
     return (info != version_map.cend()) ? info->second : empty_info;
 }
 
-InstanceExtensions::InstanceExtensions(APIVersion requested_api_version, const VkInstanceCreateInfo* pCreateInfo) {
+InstanceExtensions::InstanceExtensions(APIVersion requested_api_version, const VkInstanceCreateInfo *pCreateInfo) {
     // Initialize struct data, robust to invalid pCreateInfo
     api_version = NormalizeApiVersion(requested_api_version);
-    if (!api_version.Valid()) return;
+    if (!api_version.Valid()) {
+        return;
+    }
 
     const auto promotion_info_map = GetInstancePromotionInfoMap();
-    for (const auto& version_it : promotion_info_map) {
+    for (const auto &version_it : promotion_info_map) {
         auto info = GetInstanceVersionMap(version_it.second.first);
         if (api_version >= version_it.first) {
-            if (info.state) this->*(info.state) = kEnabledByCreateinfo;
-            for (const auto& extension : version_it.second.second) {
+            if (info.state) {
+                (this->*(info.state)).ext_enabled = kEnabledByCreateinfo;
+            }
+            for (const auto &extension : version_it.second.second) {
                 info = GetInfo(extension);
                 assert(info.state);
-                if (info.state) this->*(info.state) = kEnabledByApiLevel;
-            }
-        }
-    }
-
-    // CreateInfo takes precedence over promoted
-    if (pCreateInfo && pCreateInfo->ppEnabledExtensionNames) {
-        for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
-            if (!pCreateInfo->ppEnabledExtensionNames[i]) continue;
-            vvl::Extension extension = GetExtension(pCreateInfo->ppEnabledExtensionNames[i]);
-            auto info = GetInfo(extension);
-            if (info.state) this->*(info.state) = kEnabledByCreateinfo;
-        }
-    }
-}
-
-DeviceExtensions::DeviceExtensions(const InstanceExtensions& instance_ext, APIVersion requested_api_version,
-                                   const VkDeviceCreateInfo* pCreateInfo)
-    : InstanceExtensions(instance_ext) {
-    auto api_version = NormalizeApiVersion(requested_api_version);
-    if (!api_version.Valid()) return;
-
-    const auto promotion_info_map = GetDevicePromotionInfoMap();
-    for (const auto& version_it : promotion_info_map) {
-        auto info = GetDeviceVersionMap(version_it.second.first);
-        if (api_version >= version_it.first) {
-            if (info.state) this->*(info.state) = kEnabledByCreateinfo;
-            for (const auto& extension : version_it.second.second) {
-                info = GetInfo(extension);
-                assert(info.state);
-                if (info.state) this->*(info.state) = kEnabledByApiLevel;
-            }
-        }
-    }
-
-    // CreateInfo takes precedence over promoted
-    if (pCreateInfo && pCreateInfo->ppEnabledExtensionNames) {
-        for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
-            if (!pCreateInfo->ppEnabledExtensionNames[i]) continue;
-            vvl::Extension extension = GetExtension(pCreateInfo->ppEnabledExtensionNames[i]);
-            auto info = GetInfo(extension);
-            if (info.state) this->*(info.state) = kEnabledByCreateinfo;
-        }
-    }
-
-    // Workaround for functions being introduced by multiple extensions, until the layer is fixed to handle this correctly
-    // See https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/5579 and
-    // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/5600
-    {
-        constexpr std::array shader_object_interactions = {
-            vvl::Extension::_VK_EXT_extended_dynamic_state,
-            vvl::Extension::_VK_EXT_extended_dynamic_state2,
-            vvl::Extension::_VK_EXT_extended_dynamic_state3,
-            vvl::Extension::_VK_EXT_vertex_input_dynamic_state,
-        };
-        auto info = GetInfo(vvl::Extension::_VK_EXT_shader_object);
-        if (info.state) {
-            if (IsExtEnabled(this->*(info.state))) {
-                for (auto interaction_ext : shader_object_interactions) {
-                    info = GetInfo(interaction_ext);
-                    assert(info.state);
-                    if (this->*(info.state) != kEnabledByCreateinfo) {
-                        this->*(info.state) = kEnabledByInteraction;
-                    }
+                if (info.state) {
+                    (this->*(info.state)).ext_enabled = kEnabledByApiLevel;
                 }
             }
         }
     }
-}
 
-DeviceExtensions::DeviceExtensions(const InstanceExtensions& instance_ext, APIVersion requested_api_version,
-                                   const std::vector<VkExtensionProperties>& props)
-    : InstanceExtensions(instance_ext) {
-    auto api_version = NormalizeApiVersion(requested_api_version);
-    if (!api_version.Valid()) return;
-
-    const auto promotion_info_map = GetDevicePromotionInfoMap();
-    for (const auto& version_it : promotion_info_map) {
-        auto info = GetDeviceVersionMap(version_it.second.first);
-        if (api_version >= version_it.first) {
-            if (info.state) this->*(info.state) = kEnabledByCreateinfo;
-            for (const auto& extension : version_it.second.second) {
-                info = GetInfo(extension);
-                assert(info.state);
-                if (info.state) this->*(info.state) = kEnabledByApiLevel;
+    // CreateInfo takes precedence over promoted
+    if (pCreateInfo && pCreateInfo->ppEnabledExtensionNames) {
+        for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
+            if (!pCreateInfo->ppEnabledExtensionNames[i]) {
+                continue;
+            }
+            vvl::Extension extension = GetExtension(pCreateInfo->ppEnabledExtensionNames[i]);
+            auto info = GetInfo(extension);
+            if (info.state) {
+                (this->*(info.state)).ext_enabled = kEnabledByCreateinfo;
             }
         }
     }
-    for (const auto& prop : props) {
-        vvl::Extension extension = GetExtension(prop.extensionName);
-        auto info = GetInfo(extension);
-        if (info.state) this->*(info.state) = kEnabledByCreateinfo;
+}
+
+DeviceExtensions::DeviceExtensions(const InstanceExtensions &instance_extensions, APIVersion requested_api_version,
+                                   const std::optional<std::vector<VkExtensionProperties>> &ext_props,
+                                   const VkDeviceCreateInfo *pCreateInfo)
+    : InstanceExtensions(instance_extensions) {
+    auto api_version = NormalizeApiVersion(requested_api_version);
+    if (!api_version.Valid()) {
+        return;
+    }
+
+    if (ext_props.has_value()) {
+        for (const auto &ext_prop : *ext_props) {
+            vvl::Extension extension = GetExtension(ext_prop.extensionName);
+            auto info = GetInfo(extension);
+            if (info.state) {
+                this->*(info.state) = {kNotEnabled, ext_prop.specVersion};
+            }
+        }
+    }
+
+    const auto promotion_info_map = GetDevicePromotionInfoMap();
+    for (const auto &version_it : promotion_info_map) {
+        auto info = GetDeviceVersionMap(version_it.second.first);
+        if (api_version >= version_it.first) {
+            if (info.state) (this->*(info.state)).ext_enabled = kEnabledByCreateinfo;
+            for (const auto &extension : version_it.second.second) {
+                info = GetInfo(extension);
+                assert(info.state);
+                if (info.state) {
+                    (this->*(info.state)).ext_enabled = kEnabledByApiLevel;
+                }
+            }
+        }
+    }
+
+    // CreateInfo takes precedence over promoted
+    if (pCreateInfo && pCreateInfo->ppEnabledExtensionNames) {
+        for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
+            if (!pCreateInfo->ppEnabledExtensionNames[i]) {
+                continue;
+            }
+            vvl::Extension extension = GetExtension(pCreateInfo->ppEnabledExtensionNames[i]);
+            auto info = GetInfo(extension);
+            if (info.state) {
+                (this->*(info.state)).ext_enabled = kEnabledByCreateinfo;
+            }
+        }
     }
 
     // Workaround for functions being introduced by multiple extensions, until the layer is fixed to handle this correctly
@@ -738,8 +718,8 @@ DeviceExtensions::DeviceExtensions(const InstanceExtensions& instance_ext, APIVe
                 for (auto interaction_ext : shader_object_interactions) {
                     info = GetInfo(interaction_ext);
                     assert(info.state);
-                    if (this->*(info.state) != kEnabledByCreateinfo) {
-                        this->*(info.state) = kEnabledByInteraction;
+                    if ((this->*(info.state)).ext_enabled != kEnabledByCreateinfo) {
+                        (this->*(info.state)).ext_enabled = kEnabledByInteraction;
                     }
                 }
             }
@@ -748,7 +728,7 @@ DeviceExtensions::DeviceExtensions(const InstanceExtensions& instance_ext, APIVe
 }
 
 using InstanceExtensionsInfoMap = vvl::unordered_map<vvl::Extension, InstanceExtensions::Info>;
-static const InstanceExtensionsInfoMap& GetInstanceInfoMap() {
+static const InstanceExtensionsInfoMap &GetInstanceInfoMap() {
     using Info = InstanceExtensions::Info;
     static const InstanceExtensionsInfoMap info_map = {
         {vvl::Extension::_VK_KHR_surface, Info(&InstanceExtensions::vk_khr_surface, {})},
@@ -884,7 +864,7 @@ static const InstanceExtensionsInfoMap& GetInstanceInfoMap() {
 }
 
 using DeviceExtensionsInfoMap = vvl::unordered_map<vvl::Extension, DeviceExtensions::Info>;
-static const DeviceExtensionsInfoMap& GetDeviceInfoMap() {
+static const DeviceExtensionsInfoMap &GetDeviceInfoMap() {
     using Info = DeviceExtensions::Info;
     static const DeviceExtensionsInfoMap info_map = {
         {vvl::Extension::_VK_KHR_swapchain,
@@ -2126,16 +2106,16 @@ static const DeviceExtensionsInfoMap& GetDeviceInfoMap() {
     return info_map;
 }
 
-const InstanceExtensions::Info& InstanceExtensions::GetInfo(vvl::Extension extension_name) const {
+const InstanceExtensions::Info &InstanceExtensions::GetInfo(vvl::Extension extension_name) const {
     static const InstanceExtensions::Info empty_info{nullptr, RequirementVec()};
-    const auto& ext_map = GetInstanceInfoMap();
+    const auto &ext_map = GetInstanceInfoMap();
     const auto info = ext_map.find(extension_name);
     return (info != ext_map.cend()) ? info->second : empty_info;
 }
 
-const DeviceExtensions::Info& DeviceExtensions::GetInfo(vvl::Extension extension_name) const {
+const DeviceExtensions::Info &DeviceExtensions::GetInfo(vvl::Extension extension_name) const {
     static const DeviceExtensions::Info empty_info{nullptr, RequirementVec()};
-    const auto& ext_map = GetDeviceInfoMap();
+    const auto &ext_map = GetDeviceInfoMap();
     const auto info = ext_map.find(extension_name);
     return (info != ext_map.cend()) ? info->second : empty_info;
 }
