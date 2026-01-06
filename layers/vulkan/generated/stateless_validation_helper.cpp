@@ -11834,6 +11834,7 @@ bool Instance::PreCallValidateGetPhysicalDeviceExternalBufferProperties(
     bool skip = false;
 
     const auto& physdev_extensions = physical_device_extensions.at(physicalDevice);
+    printf("IsExtEnabled(physdev_extensions.vk_khr_maintenance5): %d\n", IsExtEnabled(physdev_extensions.vk_khr_maintenance5));
     Context context(*this, error_obj, physdev_extensions, IsExtEnabled(physdev_extensions.vk_khr_maintenance5));
     [[maybe_unused]] const Location loc = error_obj.location;
     if (loc.function == vvl::Func::vkGetPhysicalDeviceExternalBufferProperties &&

@@ -48,6 +48,8 @@ void Instance::CommonPostCallRecordEnumeratePhysicalDevice(const VkPhysicalDevic
             DispatchEnumerateDeviceExtensionProperties(phys_device, nullptr, &ext_count, ext_props.data());
 
             DeviceExtensions phys_dev_exts(extensions, phys_dev_props.apiVersion, ext_props);
+            printf("Went through Instance::CommonPostCallRecordEnumeratePhysicalDevice\n");
+            printf("phys_dev_exts.vk_khr_maintenance5.ext_enabled: %d\n", phys_dev_exts.vk_khr_maintenance5.ext_enabled);
             physical_device_extensions[phys_device] = std::move(phys_dev_exts);  // #ARNO_TODO ah, everyone needs to use that
         }
     }
