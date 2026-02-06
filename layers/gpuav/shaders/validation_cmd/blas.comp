@@ -68,15 +68,15 @@ void StoreIndex(uint i, uint value) {
     }
 }
 
-// struct VkAabbPositionsKHR {
-//     float minX;
-//     float minY;
-//     float minZ;
-//     float maxX;
-//     float maxY;
-//     float maxZ;
-// };
-layout(buffer_reference, scalar) buffer AabbsPtr { float coords[6]; };
+struct VkAabbPositionsKHR {
+    float minX;
+    float minY;
+    float minZ;
+    float maxX;
+    float maxY;
+    float maxZ;
+};
+layout(buffer_reference, scalar) buffer AabbsPtr { VkAabbPositionsKHR coords; };
 
 void main() {
     const uint gid = gl_GlobalInvocationID.x;
@@ -99,16 +99,30 @@ void main() {
         }
 
         const uint64_t aabb_i = gid;
+        #if 0
         AabbsPtr aabb = AabbsPtr(pc.address + uint64_t(pc.primitive_offset) + aabb_i * pc.stride);
-        if (aabb.coords[0] > aabb.coords[3]) {
-            GpuavLogError4(kErrorGroup_GpuPreBuildAccelerationStructures, kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_X, pc.error_info_i, gid, floatBitsToUint(aabb.coords[0]), floatBitsToUint(aabb.coords[3]));
+        if (aabb.coords.minX > aabb.coords.maxX) {
+            GpuavLogError4(kErrorGroup_GpuPreBuildAccelerationStructures, kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_X, pc.error_info_i, gid, floatBitsToUint(aabb.coords.minX), floatBitsToUint(aabb.coords.maxX));
         }
 
-        if (aabb.coords[1] > aabb.coords[4]) {
-            GpuavLogError4(kErrorGroup_GpuPreBuildAccelerationStructures, kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_Y, pc.error_info_i, gid, floatBitsToUint(aabb.coords[1]), floatBitsToUint(aabb.coords[4]));
+        if (aabb.coords.minY > aabb.coords.maxY) {
+            GpuavLogError4(kErrorGroup_GpuPreBuildAccelerationStructures, kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_Y, pc.error_info_i, gid, floatBitsToUint(aabb.coords.minY), floatBitsToUint(aabb.coords.maxY));
         }
-        if (aabb.coords[2] > aabb.coords[5]) {
-            GpuavLogError4(kErrorGroup_GpuPreBuildAccelerationStructures, kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_Z, pc.error_info_i, gid, floatBitsToUint(aabb.coords[2]), floatBitsToUint(aabb.coords[5]));
+        if (aabb.coords.minZ > aabb.coords.maxZ) {
+            GpuavLogError4(kErrorGroup_GpuPreBuildAccelerationStructures, kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_Z, pc.error_info_i, gid, floatBitsToUint(aabb.coords.minZ), floatBitsToUint(aabb.coords.maxZ));
         }
+        #else
+        VkAabbPositionsKHR aabb = AabbsPtr(pc.address + uint64_t(pc.primitive_offset) + aabb_i * pc.stride).coords;
+        if (aabb.minX > aabb.maxX) {
+            GpuavLogError4(kErrorGroup_GpuPreBuildAccelerationStructures, kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_X, pc.error_info_i, gid, floatBitsToUint(aabb.minX), floatBitsToUint(aabb.maxX));
+        }
+
+        if (aabb.minY > aabb.maxY) {
+            GpuavLogError4(kErrorGroup_GpuPreBuildAccelerationStructures, kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_Y, pc.error_info_i, gid, floatBitsToUint(aabb.minY), floatBitsToUint(aabb.maxY));
+        }
+        if (aabb.minZ > aabb.maxZ) {
+            GpuavLogError4(kErrorGroup_GpuPreBuildAccelerationStructures, kErrorSubCode_PreBuildAccelerationStructures_MinMaxAabb_Z, pc.error_info_i, gid, floatBitsToUint(aabb.minZ), floatBitsToUint(aabb.maxZ));
+        }
+        #endif
     }
 }
