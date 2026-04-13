@@ -2316,3 +2316,108 @@ TEST_F(PositiveRayTracing, CreateAccelerationStructure2KHR) {
     m_default_queue->Submit(m_command_buffer);
     m_device->Wait();
 }
+
+TEST_F(PositiveRayTracing, WriteResourceDescriptorsTwoTLASSharedMemory) {
+    TEST_DESCRIPTION(
+        "Create two TLASes backed by separate buffers sharing the same VkDeviceMemory at different offsets. "
+        "Destroy the first AS and its buffer, then write a resource descriptor for the second AS using its "
+        "acceleration structure device address.");
+
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::rayTracingPipeline);
+    AddRequiredFeature(vkt::Feature::accelerationStructure);
+    AddRequiredFeature(vkt::Feature::bufferDeviceAddress);
+    AddRequiredFeature(vkt::Feature::descriptorHeap);
+    RETURN_IF_SKIP(InitFrameworkForRayTracingTest());
+    RETURN_IF_SKIP(InitState());
+
+    const VkDeviceSize descriptor_size =
+        vk::GetPhysicalDeviceDescriptorSizeEXT(gpu_, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
+
+    // Query build sizes for an empty TLAS (0 instances) to get the required AS buffer size
+    VkAccelerationStructureGeometryKHR geometry = vku::InitStructHelper();
+    geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+
+    VkAccelerationStructureBuildGeometryInfoKHR build_info = vku::InitStructHelper();
+    build_info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+    build_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+    build_info.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+    build_info.geometryCount = 1;
+    build_info.pGeometries = &geometry;
+
+    uint32_t max_primitive_count = 0;
+    VkAccelerationStructureBuildSizesInfoKHR sizes_info = vku::InitStructHelper();
+    vk::GetAccelerationStructureBuildSizesKHR(*m_device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build_info,
+                                              &max_primitive_count, &sizes_info);
+    const VkDeviceSize as_size = sizes_info.accelerationStructureSize;
+
+    // Create two buffers without memory to back the acceleration structures
+    VkBufferCreateInfo buffer_ci = vku::InitStructHelper();
+    buffer_ci.size = as_size;
+    buffer_ci.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR;
+
+    vkt::Buffer buffer1(*m_device, buffer_ci, vkt::no_mem);
+    vkt::Buffer buffer2(*m_device, buffer_ci, vkt::no_mem);
+
+    // Allocate a single VkDeviceMemory large enough for both buffers at properly-aligned offsets
+    VkMemoryRequirements mem_reqs = buffer1.MemoryRequirements();
+    const VkDeviceSize aligned_size = Align(mem_reqs.size, mem_reqs.alignment);
+
+    VkMemoryAllocateFlagsInfo alloc_flags = vku::InitStructHelper();
+    alloc_flags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+    VkMemoryAllocateInfo alloc_info =
+        vkt::DeviceMemory::GetResourceAllocInfo(*m_device, mem_reqs, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &alloc_flags);
+    alloc_info.allocationSize = aligned_size * 2;
+
+    vkt::DeviceMemory memory(*m_device, alloc_info);
+
+    vk::BindBufferMemory(*m_device, buffer1, memory, 0);
+    vk::BindBufferMemory(*m_device, buffer2, memory, aligned_size);
+
+    // Create first TLAS on buffer1
+    VkAccelerationStructureCreateInfoKHR as_ci = vku::InitStructHelper();
+    as_ci.buffer = buffer1;
+    as_ci.size = as_size;
+    as_ci.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+
+    VkAccelerationStructureKHR as1 = VK_NULL_HANDLE;
+    vk::CreateAccelerationStructureKHR(*m_device, &as_ci, nullptr, &as1);
+
+    VkAccelerationStructureDeviceAddressInfoKHR addr_info = vku::InitStructHelper();
+    addr_info.accelerationStructure = as1;
+    vk::GetAccelerationStructureDeviceAddressKHR(*m_device, &addr_info);
+
+    // Second GetAccelerationStructureBuildSizesKHR call (as in the original trace)
+    vk::GetAccelerationStructureBuildSizesKHR(*m_device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build_info,
+                                              &max_primitive_count, &sizes_info);
+
+    // Create second TLAS on buffer2 (same memory, different offset)
+    as_ci.buffer = buffer2;
+    VkAccelerationStructureKHR as2 = VK_NULL_HANDLE;
+    vk::CreateAccelerationStructureKHR(*m_device, &as_ci, nullptr, &as2);
+
+    addr_info.accelerationStructure = as2;
+    const VkDeviceAddress as2_device_address = vk::GetAccelerationStructureDeviceAddressKHR(*m_device, &addr_info);
+
+    m_device->Wait();
+
+    // Destroy the first AS and its buffer; second AS is still alive and backed by the shared memory
+    vk::DestroyAccelerationStructureKHR(*m_device, as1, nullptr);
+    buffer1.Destroy();
+
+    // Write a resource descriptor for the second TLAS using its acceleration structure device address.
+    // VVL must correctly resolve the AS device address even though AS1 (which shared the same VkDeviceMemory)
+    // has already been destroyed.
+    VkDeviceAddressRangeEXT device_address_range = {as2_device_address, as_size};
+
+    VkResourceDescriptorInfoEXT resource_info = vku::InitStructHelper();
+    resource_info.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    resource_info.data.pAddressRange = &device_address_range;
+
+    std::vector<uint8_t> descriptor_data(static_cast<size_t>(descriptor_size));
+    VkHostAddressRangeEXT descriptor = {descriptor_data.data(), static_cast<size_t>(descriptor_size)};
+    vk::WriteResourceDescriptorsEXT(*m_device, 1u, &resource_info, &descriptor);
+
+    vk::DestroyAccelerationStructureKHR(*m_device, as2, nullptr);
+}
