@@ -3946,10 +3946,15 @@ TEST_F(NegativeDeviceAddressCommands, AccelerationStructureDeviceAddressSparseRe
 }
 
 TEST_F(NegativeDeviceAddressCommands, AccelerationStructureDeviceAddressCaptureReplay) {
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    AddRequiredExtensions(VK_KHR_DEVICE_ADDRESS_COMMANDS_EXTENSION_NAME);
     AddRequiredExtensions(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::bufferDeviceAddress);
+    AddRequiredFeature(vkt::Feature::deviceAddressCommands);
     AddRequiredFeature(vkt::Feature::accelerationStructure);
     AddRequiredFeature(vkt::Feature::accelerationStructureCaptureReplay);
-    RETURN_IF_SKIP(InitBasicDeviceAddressCommands());
+    AddRequiredFeature(vkt::Feature::bufferDeviceAddressMultiDevice);
+    RETURN_IF_SKIP(Init());
 
     vkt::Buffer buffer(*m_device, 256u, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR, vkt::device_address);
 
@@ -4017,9 +4022,15 @@ TEST_F(NegativeDeviceAddressCommands, AccelerationStructureSize) {
 }
 
 TEST_F(NegativeDeviceAddressCommands, AccelerationStructureCreateFlags) {
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    AddRequiredExtensions(VK_KHR_DEVICE_ADDRESS_COMMANDS_EXTENSION_NAME);
     AddRequiredExtensions(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::bufferDeviceAddress);
+    AddRequiredFeature(vkt::Feature::deviceAddressCommands);
     AddRequiredFeature(vkt::Feature::accelerationStructure);
-    RETURN_IF_SKIP(InitBasicDeviceAddressCommands());
+    AddRequiredFeature(vkt::Feature::accelerationStructureCaptureReplay);
+    AddRequiredFeature(vkt::Feature::bufferDeviceAddressMultiDevice);
+    RETURN_IF_SKIP(Init());
 
     vkt::Buffer buffer(*m_device, 256u, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR, vkt::device_address);
 

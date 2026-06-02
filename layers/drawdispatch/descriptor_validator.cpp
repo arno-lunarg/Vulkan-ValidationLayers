@@ -38,6 +38,7 @@
 #include "drawdispatch/drawdispatch_vuids.h"
 #include "utils/action_command_utils.h"
 #include "utils/image_utils.h"
+#include "utils/ray_tracing_utils.h"
 
 namespace vvl {
 
@@ -1276,13 +1277,46 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
                                  DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(acc).c_str(),
                                  DescribeInstruction().c_str());
             }
-        } else if (auto as_buffer = acc_node->GetFirstValidBuffer(*dev_proxy.device_state)) {
-            for (const auto& mem_binding : as_buffer.state->GetInvalidMemory()) {
-                const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-                skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
+        } else {
+            if (auto as_buffer = acc_node->GetFirstValidBuffer(*dev_proxy.device_state)) {
+                for (const auto& mem_binding : as_buffer.state->GetInvalidMemory()) {
+                    const LogObjectList objlist(this->objlist, descriptor_set.Handle());
+                    skip |=
+                        LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                                  "the %s is using acceleration structure %s that references invalid memory %s.%s",
                                  DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(acc).c_str(),
                                  FormatHandle(mem_binding->Handle()).c_str(), DescribeInstruction().c_str());
+                }
+            }
+
+            if (!resource_variable.IsAccessed()) {
+                return skip;
+            }
+
+            const auto& build_info_opt = acc_node->GetBuildInfo();
+            const bool has_opacity_micromap_geometry =
+                build_info_opt.has_value() && rt::BuildInfoHasOpacityMicromap(*build_info_opt->ptr());
+
+            if (has_opacity_micromap_geometry) {
+                if (acc_node->WasDeserialized() && build_info_opt.has_value()) {
+                    const auto referenced_micromaps = rt::GetReferencedMicromaps(*build_info_opt->ptr());
+
+                    for (const auto micromap_handle : referenced_micromaps) {
+                        const auto micromap_state = dev_proxy.device_state->Get<vvl::AccelerationStructureKHR>(micromap_handle);
+
+                        if (micromap_state && !micromap_state->WasDeserialized()) {
+                            const LogObjectList objlist(this->objlist, descriptor_set.Handle(), acc_node->Handle(),
+                                                        micromap_state->Handle());
+                            skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::MICROMAP_11637), objlist, loc.Get(),
+                                             "the %s accesses deserialized acceleration structure %s, but referenced "
+                                             "micromap %s was not deserialized from the "
+                                             "corresponding original micromap serialized data.%s",
+                                             DescribeDescriptor(resource_variable, index, descriptor_type).c_str(),
+                                             FormatHandle(acc_node->Handle()).c_str(),
+                                             FormatHandle(micromap_state->Handle()).c_str(), DescribeInstruction().c_str());
+                        }
+                    }
+                }
             }
         }
     } else {

@@ -73,6 +73,8 @@ std::string CreateActionVuid(Func function, const ActionVUID id) {
         case ActionVUID::LINEAR_FILTER_04553: suffix = "magFilter-04553"; break;
         // ### VUID-vkCmdDraw-magFilter-09598
         case ActionVUID::LINEAR_FILTER_09598: suffix = "magFilter-09598"; break;
+        // ### VUID-vkCmdDraw-micromap-11637
+        case ActionVUID::MICROMAP_11637: suffix = "micromap-11637"; break;
         // ### VUID-vkCmdDraw-mipmapMode-04770
         case ActionVUID::LINEAR_MIPMAP_04770: suffix = "mipmapMode-04770"; break;
         // ### VUID-vkCmdDraw-mipmapMode-09599

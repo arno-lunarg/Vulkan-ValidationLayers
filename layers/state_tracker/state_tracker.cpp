@@ -5969,10 +5969,16 @@ void DeviceState::PostCallRecordCmdCopyMemoryToAccelerationStructureKHR(VkComman
                                                                         const VkCopyMemoryToAccelerationStructureInfoKHR* pInfo,
                                                                         const RecordObject& record_obj) {
     auto cb_state = GetWrite<CommandBuffer>(commandBuffer);
+
+    auto dst_as_state = Get<AccelerationStructureKHR>(pInfo->dst);
+    ASSERT_AND_RETURN(dst_as_state);
+
+    if (pInfo->mode == VK_COPY_ACCELERATION_STRUCTURE_MODE_DESERIALIZE_KHR) {
+        dst_as_state->MarkAsDeserialized();
+    }
+
     cb_state->RecordCommand(record_obj.location);
     if (!disabled[command_buffer_state]) {
-        auto dst_as_state = Get<AccelerationStructureKHR>(pInfo->dst);
-        ASSERT_AND_RETURN(dst_as_state);
         cb_state->AddChild(dst_as_state);
 
         // Issue https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/6461

@@ -1711,8 +1711,15 @@ TEST_F(PositiveSyncObject, BarrierAccessSyncMicroMap) {
     AddRequiredExtensions(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
     AddRequiredExtensions(VK_EXT_OPACITY_MICROMAP_EXTENSION_NAME);
     AddRequiredFeature(vkt::Feature::synchronization2);
-    AddRequiredFeature(vkt::Feature::micromap);
-    RETURN_IF_SKIP(Init());
+    VkPhysicalDeviceOpacityMicromapFeaturesEXT ext_features = vku::InitStructHelper();
+    VkPhysicalDeviceFeatures2 features2 = vku::InitStructHelper(&ext_features);
+    RETURN_IF_SKIP(InitFramework());
+    vk::GetPhysicalDeviceFeatures2(Gpu(), &features2);
+    if (!ext_features.micromap) {
+        GTEST_SKIP() << "micromap feature not supported";
+    }
+    ext_features.micromap = VK_TRUE;
+    RETURN_IF_SKIP(InitState(nullptr, &features2));
 
     VkMemoryBarrier2 mem_barrier = vku::InitStructHelper();
     mem_barrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
