@@ -1785,33 +1785,38 @@ void GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t>& in
     // If descriptor indexing is enabled, enable length checks and updated descriptor checks
     if (gpuav_settings.shader_instrumentation.descriptor_checks) {
         if (interface.descriptor_mode == vvl::DescriptorModeClassic) {
+#if 0
             // Will wrap descriptor indexing with if/else to prevent crashing if OOB
             spirv::DescriptorIndexingOOBPass oob_pass(module);
             modified |= oob_pass.Run();
-
+#endif
             // Depending on the DescriptorClass, will add dedicated check
             if (!modified_features.robustBufferAccess) {
                 // This check is for catching OOB in a UBO/SSBO which is caught with robustBufferAccess
                 spirv::DescriptorClassGeneralBufferPass general_buffer_pass(module);
                 modified |= general_buffer_pass.Run();
-
+#if 0
                 // Details being worked out in https://gitlab.khronos.org/vulkan/vulkan/-/issues/3977
                 // But for what we are checking for, can rely on robustBufferAccess
                 spirv::DescriptorClassTexelBufferPass texel_buffer_pass(module);
                 modified |= texel_buffer_pass.Run();
+#endif
             } else if (modified_features.cooperativeMatrix && !modified_features.cooperativeMatrixRobustBufferAccess) {
+#if 0
                 // Cooperative Matrix OOB rules are unique and have their own robustness feature, so still need to run the pass
                 spirv::DescriptorClassGeneralBufferPass general_buffer_pass(module);
                 modified |= general_buffer_pass.Run();
+#endif
             }
         }
-
+#if 0
         if (interface.descriptor_mode == vvl::DescriptorModeHeap) {
             spirv::DescriptorHeapPass oob_pass(module);
             modified |= oob_pass.Run();
         }
+#endif
     }
-
+#if 0
     if (gpuav_settings.shader_instrumentation.buffer_device_address) {
         spirv::BufferDeviceAddressPass pass(module);
         modified |= pass.Run();
@@ -1853,6 +1858,7 @@ void GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t>& in
         spirv::SanitizerPass pass(module);
         modified |= pass.Run();
     }
+#endif
 
     // If we have passes that require inject LogError before the shader end we do it now.
     // We have a dedicated pass to ensure the LogError is only added once

@@ -56,29 +56,18 @@ uint32_t DescriptorClassGeneralBufferPass::GetLinkFunctionId(bool is_coop_mat) {
 
 void DescriptorClassGeneralBufferPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InstructionMeta& meta) {
     assert(!meta.access_path.ac_list.empty());
-    const DescriptorInterface& interface = meta.access_path.variable->interface_;
-    const Constant& desc_set_constant = type_manager_.GetConstantUInt32(interface.set);
-    const uint32_t desc_index_id = CastToUint32(meta.access_path.descriptor_index_id, block, inst_it);  // might be int32
-
-    const uint32_t descriptor_offset_id = GetLastByte(meta.access_path, block, inst_it);
-
-    const auto& layout_lut = module_.interface_.instrumentation_dsl.set_index_to_bindings_layout_lut;
-    BindingLayout binding_layout = layout_lut[interface.set][interface.binding];
-    const Constant& binding_layout_offset = type_manager_.GetConstantUInt32(binding_layout.start);
-
-    const uint32_t inst_position = meta.target_instruction->GetPositionOffset();
-    const uint32_t inst_position_id = type_manager_.CreateConstantUInt32(inst_position).Id();
 
     const uint32_t function_result = module_.TakeNextId();
     const bool is_coop_mat = meta.access_path.coop_mat.used;
     const uint32_t function_def = GetLinkFunctionId(is_coop_mat);
     const uint32_t void_type = type_manager_.GetTypeVoid().Id();
 
+// #ARNO Add this block back to provoke crash
+#if 0
     block.CreateInstruction(spv::OpFunctionCall,
-                            {void_type, function_result, function_def, inst_position_id, desc_set_constant.Id(), desc_index_id,
-                             descriptor_offset_id, binding_layout_offset.Id()},
+                            {void_type, function_result, function_def},
                             inst_it);
-
+#endif
     module_.need_log_error_ = true;
 }
 
