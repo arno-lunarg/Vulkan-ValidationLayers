@@ -36,7 +36,7 @@ namespace as {
 // or on the host using the ***Host*** methods
 class GeometryKHR {
   public:
-    enum class Type { Triangle, AABB, Instance, Spheres, LSSpheres, _INTERNAL_UNSPECIFIED };
+    enum class Type { Triangle, AABB, Instance, Spheres, LSSpheres, Micromap, _INTERNAL_UNSPECIFIED };
     struct Triangles {
         vkt::Buffer device_vertex_buffer;
         std::unique_ptr<float[]> host_vertex_buffer;
@@ -70,6 +70,11 @@ class GeometryKHR {
         vkt::Buffer device_radius_buffer;
         std::unique_ptr<float[]> host_radius_buffer;
         std::shared_ptr<VkAccelerationStructureGeometryLinearSweptSpheresDataNV> sphere_geometry_ptr;
+    };
+    struct Micromap {
+        vkt::Buffer data_buffer;
+        vkt::Buffer triangles_buffer;
+        std::shared_ptr<VkAccelerationStructureGeometryMicromapDataKHR> micromap_data_ptr;
     };
 
     ~GeometryKHR() = default;
@@ -154,6 +159,10 @@ class GeometryKHR {
     GeometryKHR& SetLSSpheresVertexAddressZero();
     GeometryKHR& SetLSSpheresRadiusAddressZero();
 
+    // Micromap
+    GeometryKHR& SetMicromapDataBuffer(vkt::Buffer&& buffer);
+    GeometryKHR& SetMicromapTriangleArrayBuffer(vkt::Buffer&& buffer, VkDeviceSize triangle_array_stride);
+
     VkAccelerationStructureGeometryKHR& GetVkObj() { return vk_obj_; }
     const VkAccelerationStructureGeometryKHR& GetVkObj() const { return vk_obj_; }
     VkAccelerationStructureBuildRangeInfoKHR GetFullBuildRange() const;
@@ -171,6 +180,7 @@ class GeometryKHR {
     Instances instances_;
     Spheres spheres_;
     LSSpheres lsspheres_;
+    Micromap micromap_;
 };
 
 class AccelerationStructureKHR : public vkt::internal::NonDispHandle<VkAccelerationStructureKHR> {
@@ -273,7 +283,8 @@ class BuildGeometryInfoKHR {
     void SetupBuild(bool is_on_device_build, bool use_ppGeometries = true);
 
     // These will only setup the geometries lists and the pertaining build ranges
-    void VkCmdBuildAccelerationStructuresKHR(VkCommandBuffer cmd_buffer, bool use_ppGeometries = true);
+    void VkCmdBuildAccelerationStructuresKHR(VkCommandBuffer cmd_buffer, bool use_ppGeometries = true,
+                                             bool use_null_build_ranges = false);
     // TODO - indirect build not fully implemented, only cared about having a valid call at time of writing
     void VkCmdBuildAccelerationStructuresIndirectKHR(VkCommandBuffer cmd_buffer);
     void VkBuildAccelerationStructuresKHR();
@@ -284,6 +295,7 @@ class BuildGeometryInfoKHR {
     std::shared_ptr<AccelerationStructureKHR>& GetDstAS() { return dst_as_; }
     const std::shared_ptr<vkt::Buffer>& GetScratchBuffer() const { return device_scratch_; }
     VkAccelerationStructureBuildSizesInfoKHR GetSizeInfo(bool use_ppGeometries = true);
+
     std::vector<VkAccelerationStructureBuildRangeInfoKHR> GetBuildRangeInfosFromGeometries();
 
   private:
@@ -351,10 +363,13 @@ GeometryKHR GeometrySimpleOnHostSpheresInfo();
 GeometryKHR GeometrySimpleOnDeviceLSSpheresInfo(const vkt::Device& device);
 GeometryKHR GeometrySimpleOnHostLSSpheresInfo();
 
+GeometryKHR GeometrySimpleOnDeviceMicromapInfo(const vkt::Device& device);
+
 std::shared_ptr<AccelerationStructureKHR> AccelStructNull(const vkt::Device& device);
 std::shared_ptr<AccelerationStructureKHR> AccelStructSimpleOnDeviceBottomLevel(const vkt::Device& device, VkDeviceSize size);
 std::shared_ptr<AccelerationStructureKHR> AccelStructSimpleOnHostBottomLevel(const vkt::Device& device, VkDeviceSize size);
 std::shared_ptr<AccelerationStructureKHR> AccelStructSimpleOnDeviceTopLevel(const vkt::Device& device, VkDeviceSize size);
+std::shared_ptr<AccelerationStructureKHR> AccelStructSimpleOnDeviceMicromap(const vkt::Device& device, VkDeviceSize size);
 
 BuildGeometryInfoKHR BuildGeometryInfoSimpleOnDeviceBottomLevel(const vkt::Device& device,
                                                                 GeometryKHR::Type geometry_type = GeometryKHR::Type::Triangle);
@@ -362,6 +377,8 @@ BuildGeometryInfoKHR BuildGeometryInfoOnDeviceBottomLevel(const vkt::Device& dev
 
 BuildGeometryInfoKHR BuildGeometryInfoSimpleOnHostBottomLevel(const vkt::Device& device,
                                                               GeometryKHR::Type geometry_type = GeometryKHR::Type::Triangle);
+
+BuildGeometryInfoKHR BuildGeometryInfoOnDeviceMicromap(const vkt::Device& device);
 
 // Create an on device TLAS pointing to one BLAS
 // on_device_bottom_level_geometry must have been built previously, and on the device

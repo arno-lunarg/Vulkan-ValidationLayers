@@ -19,6 +19,25 @@
 
 class PositiveRayTracingMicromap : public RayTracingTest {};
 
+TEST_F(PositiveRayTracingMicromap, Simple) {
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    AddRequiredExtensions(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_DEVICE_ADDRESS_COMMANDS_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_OPACITY_MICROMAP_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::deviceAddressCommands);
+    AddRequiredFeature(vkt::Feature::bufferDeviceAddress);
+    AddRequiredFeature(vkt::Feature::accelerationStructure);
+    AddRequiredFeature(vkt::Feature::micromap);
+    RETURN_IF_SKIP(Init());
+
+    auto micromap = vkt::as::blueprint::BuildGeometryInfoOnDeviceMicromap(*m_device);
+    m_command_buffer.Begin();
+    micromap.SetupBuild(true);
+    micromap.VkCmdBuildAccelerationStructuresKHR(m_command_buffer, true, true);
+    m_command_buffer.End();
+}
+
 TEST_F(PositiveRayTracingMicromap, BasicEXT) {
     TEST_DESCRIPTION("Test building an opacity micromap then building an acceleration structure with that");
 
