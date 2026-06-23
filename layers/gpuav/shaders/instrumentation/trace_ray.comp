@@ -25,6 +25,9 @@
 #include "../setup/acceleration_structure_gpu_state_update.h"
 
 layout(buffer_reference, buffer_reference_align = 8, scalar) buffer DescriptorEncodings {
+        uint size;
+    uint pad_;
+
     DescriptorEncoding data[];
 };
 

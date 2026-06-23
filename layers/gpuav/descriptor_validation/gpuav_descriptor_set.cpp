@@ -30,17 +30,25 @@
 #include "state_tracker/descriptor_sets.h"
 #include "containers/limits.h"
 #include "utils/image_utils.h"
+#include <fstream>
 
 using vvl::DescriptorClass;
 
 namespace gpuav {
+
+static std::unique_ptr<std::ofstream> ss_debug = nullptr;
 
 DescriptorSetSubState::DescriptorSetSubState(const vvl::DescriptorSet& set, Validator& state_data)
     : vvl::DescriptorSetSubState(set), descriptor_encodings_(state_data) {
     BuildBindingLayouts();
 }
 
-DescriptorSetSubState::~DescriptorSetSubState() { descriptor_encodings_.Destroy(); }
+DescriptorSetSubState::~DescriptorSetSubState() {
+#if 0
+    *ss_debug << "[CPU] (DESTROY) DEP address: " << (void*)descriptor_encodings_.Address() << " byte size: " << descriptor_encodings_.Size() << '\n';
+    descriptor_encodings_.Destroy();
+#endif
+}
 
 void DescriptorSetSubState::BuildBindingLayouts() {
     const uint32_t binding_count = (base.GetBindingCount() > 0) ? base.GetLayout()->GetMaxBinding() + 1 : 0;
@@ -60,7 +68,7 @@ void DescriptorSetSubState::BuildBindingLayouts() {
 
 void DescriptorSetSubState::CreateDescriptorEncodingBuffer() {
     VkBufferCreateInfo buffer_info = vku::InitStruct<VkBufferCreateInfo>();
-    buffer_info.size = base.GetNonInlineDescriptorCount() * sizeof(glsl::DescriptorEncoding);
+    buffer_info.size = base.GetNonInlineDescriptorCount() * sizeof(glsl::DescriptorEncoding) + 2 * sizeof(uint32_t);
     buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
     // The descriptor state buffer can be very large (4mb+ in some games). Allocating it as HOST_CACHED
@@ -68,9 +76,20 @@ void DescriptorSetSubState::CreateDescriptorEncodingBuffer() {
     // HOST_CACHED is preferred rather than required so we fall back to HOST_COHERENT on implementations
     // that don't expose a HOST_CACHED memory type.
     VmaAllocationCreateInfo alloc_info{};
-    alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     alloc_info.preferredFlags = VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
     const VkResult result = descriptor_encodings_.Create(&buffer_info, &alloc_info);
+    uint32_t* ptr = (uint32_t*)descriptor_encodings_.GetMappedPtr();
+    const uint32_t desc_count = (uint32_t)(base.GetNonInlineDescriptorCount());
+    if (!ss_debug) {
+        ss_debug = std::make_unique<std::ofstream>("app_debug_cpu.txt", std::ios::trunc);
+    }
+    *ss_debug << "[CPU] DEP address: " << (void*)descriptor_encodings_.Address() << " byte size: " << buffer_info.size
+              << " desc count: " << desc_count << '\n';
+
+    std::memset(descriptor_encodings_.GetMappedPtr(), 0xffff'ffff, buffer_info.size);
+
+    *ptr = desc_count;
     if (result != VK_SUCCESS) {
         return;
     }
@@ -178,10 +197,28 @@ template <typename Binding>
 void GetBindingEncodings(const Binding& binding, glsl::DescriptorEncoding* descriptor_encodings, uint32_t& index) {
     for (uint32_t di = 0; di < binding.count; di++) {
         if (!binding.updated[di]) {
-            descriptor_encodings[index++] = glsl::DescriptorEncoding();
+            descriptor_encodings[index] = glsl::DescriptorEncoding();
         } else {
-            descriptor_encodings[index++] = GetDescriptorEncoding(binding.descriptors[di]);
+            descriptor_encodings[index] = GetDescriptorEncoding(binding.descriptors[di]);
         }
+        ++index;
+    }
+}
+
+template <>
+void GetBindingEncodings(const vvl::BufferBinding& binding, glsl::DescriptorEncoding* descriptor_encodings, uint32_t& index) {
+    for (uint32_t di = 0; di < binding.count; di++) {
+        if (!binding.updated[di]) {
+            // buffer present but flag false  => updated-tracking bug (your hypothesis)
+            // buffer absent (VK_NULL_HANDLE) => slot genuinely never written (timing / real gap)
+            const vvl::BufferBinding& buffer_binding = static_cast<const vvl::BufferBinding&>(binding);
+            *ss_debug << "[CPU] ZERO-ENC binding=" << binding.binding << " di=" << di << " global=" << index
+                      << " buf=" << (void*)buffer_binding.descriptors[di].GetBuffer() << '\n';
+            descriptor_encodings[index] = glsl::DescriptorEncoding();
+        } else {
+            descriptor_encodings[index] = GetDescriptorEncoding(binding.descriptors[di]);
+        }
+        ++index;
     }
 }
 
@@ -345,7 +382,8 @@ VkDeviceAddress DescriptorSetSubState::GetDescriptorEncodingsAddress(Validator& 
         return descriptor_encodings_.Address();
     }
 
-    auto desc_set_encodings_ptr = (glsl::DescriptorEncoding*)descriptor_encodings_.GetMappedPtr();
+    uint32_t* ptr = (uint32_t*)descriptor_encodings_.GetMappedPtr();
+    auto desc_set_encodings_ptr = (glsl::DescriptorEncoding*)(ptr + 2);
 
     uint32_t index = 0;
     for (const auto& binding : base) {

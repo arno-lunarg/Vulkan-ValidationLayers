@@ -23,6 +23,8 @@
 #include "descriptor_encoding.h"
 
 layout(buffer_reference, buffer_reference_align = 8, scalar) buffer DescriptorEncodings {
+        uint size;
+    uint pad_;
     DescriptorEncoding data[];
 };
 

@@ -620,6 +620,8 @@ if (VVL_ENABLE_TRACY)
 endif()
 
 target_include_directories(vvl SYSTEM PRIVATE external)
+target_include_directories(vvl PRIVATE include/spdlog)
+target_include_directories(vvl PRIVATE include)
 
 if (ANDROID)
     # Required for __android_log_print. Marking as PUBLIC since the tests use __android_log_print as well.

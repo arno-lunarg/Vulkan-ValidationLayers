@@ -260,6 +260,8 @@ void RegisterDescriptorChecksClassicValidation(Validator& gpuav, CommandBufferSu
 
             const auto* binding_state = descriptor_set_state->GetBinding(binding_num);
 
+            strm << "[DEBUG]: global_descriptor_index: " << error_record[kInst_LogError_ParameterOffset_0]
+                 << " array size: " << error_record[kInst_LogError_ParameterOffset_2] << '\n';
             strm << "(set = " << set_num << ", binding = " << binding_num << ", index " << desc_index << ") ";
 
             const uint32_t error_sub_code = GetSubError(error_record);
