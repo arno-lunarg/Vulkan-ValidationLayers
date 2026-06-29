@@ -32,6 +32,20 @@ class DescriptorHeapPass : public Pass {
     bool Instrument() final;
     void PrintDebugInfo() const final;
 
+    // Function IDs to link in
+    enum class FunctionNames {
+        MAPPING_CONSTANT_OFFSET,
+        MAPPING_PUSH_INDEX,
+        MAPPING_INDIRECT_INDEX,
+        MAPPING_INDIRECT_INDEX_ARRAY,
+        MAPPING_RESOURCE_HEAP_DATA,
+        MAPPING_PUSH_DATA,
+        MAPPING_PUSH_ADDRESS,
+        MAPPING_INDIRECT_ADDRESS,
+        UNTYPED,
+        COUNT,
+    };
+
   private:
     struct InstructionMeta {
         const Instruction* target_instruction = nullptr;
@@ -57,20 +71,7 @@ class DescriptorHeapPass : public Pass {
     // < original ID, new CopyObject ID >
     vvl::unordered_map<uint32_t, uint32_t> copy_object_map_;
 
-    // Function IDs to link in
-    enum FunctionNames {
-        MAPPING_CONSTANT_OFFSET = 0,
-        MAPPING_PUSH_INDEX = 1,
-        MAPPING_INDIRECT_INDEX = 2,
-        MAPPING_INDIRECT_INDEX_ARRAY = 3,
-        MAPPING_RESOURCE_HEAP_DATA = 4,
-        MAPPING_PUSH_DATA = 5,
-        MAPPING_PUSH_ADDRESS = 6,
-        MAPPING_INDIRECT_ADDRESS = 7,
-        UNTYPED = 8,
-        FUNC_COUNT = 9,
-    };
-    uint32_t link_function_id_[FUNC_COUNT]{};
+    uint32_t link_function_id_[FunctionNames::COUNT]{};
     uint32_t GetLinkFunctionId(const FunctionNames func_name);
 
     const VkPhysicalDeviceDescriptorHeapPropertiesEXT& descriptor_heap_props;

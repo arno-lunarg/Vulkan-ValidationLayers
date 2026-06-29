@@ -44,7 +44,7 @@ struct OfflineFunction {
     // used for debugging
     const char* opname;
     // Number of bytes into module the OpFunction starts
-    const uint32_t offset;
+    uint32_t offset;
 };
 
 struct LinkFunction {

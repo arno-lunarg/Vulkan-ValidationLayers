@@ -40,17 +40,31 @@ namespace spirv {
 const static OfflineModule kOfflineModule = {instrumentation_descriptor_heap_comp, instrumentation_descriptor_heap_comp_size,
                                              UseErrorPayloadVariable};
 
-const static OfflineFunction kOfflineFunction[] = {
-    {"inst_heap_mapping_constant_offset", instrumentation_descriptor_heap_comp_function_0_offset},
-    {"inst_heap_mapping_push_index", instrumentation_descriptor_heap_comp_function_1_offset},
-    {"inst_heap_mapping_indirect_index", instrumentation_descriptor_heap_comp_function_2_offset},
-    {"inst_heap_mapping_indirect_index_array", instrumentation_descriptor_heap_comp_function_3_offset},
-    {"inst_heap_mapping_resource_heap_data", instrumentation_descriptor_heap_comp_function_4_offset},
-    {"inst_heap_mapping_push_data", instrumentation_descriptor_heap_comp_function_5_offset},
-    {"inst_heap_mapping_push_address", instrumentation_descriptor_heap_comp_function_6_offset},
-    {"inst_heap_mapping_indirect_address", instrumentation_descriptor_heap_comp_function_7_offset},
-    {"inst_heap_untyped", instrumentation_descriptor_heap_comp_function_8_offset},
-};
+const OfflineFunction& GetOfflineFunction(DescriptorHeapPass::FunctionNames func_name) {
+    static std::vector<OfflineFunction> funcs;
+    if (funcs.empty()) {
+        using FuncNames = DescriptorHeapPass::FunctionNames;
+        funcs.resize(size_t(FuncNames::COUNT));
+        funcs[size_t(FuncNames::MAPPING_CONSTANT_OFFSET)] = {"inst_heap_mapping_constant_offset",
+                                                             instrumentation_descriptor_heap_comp_function_0_offset};
+        funcs[size_t(FuncNames::MAPPING_PUSH_INDEX)] = {"inst_heap_mapping_push_index",
+                                                        instrumentation_descriptor_heap_comp_function_1_offset};
+        funcs[size_t(FuncNames::MAPPING_INDIRECT_INDEX)] = {"inst_heap_mapping_indirect_index",
+                                                            instrumentation_descriptor_heap_comp_function_2_offset};
+        funcs[size_t(FuncNames::MAPPING_INDIRECT_INDEX_ARRAY)] = {"inst_heap_mapping_indirect_index_array",
+                                                                  instrumentation_descriptor_heap_comp_function_3_offset};
+        funcs[size_t(FuncNames::MAPPING_RESOURCE_HEAP_DATA)] = {"inst_heap_mapping_resource_heap_data",
+                                                                instrumentation_descriptor_heap_comp_function_4_offset};
+        funcs[size_t(FuncNames::MAPPING_PUSH_DATA)] = {"inst_heap_mapping_push_data",
+                                                       instrumentation_descriptor_heap_comp_function_5_offset};
+        funcs[size_t(FuncNames::MAPPING_PUSH_ADDRESS)] = {"inst_heap_mapping_push_address",
+                                                          instrumentation_descriptor_heap_comp_function_6_offset};
+        funcs[size_t(FuncNames::MAPPING_INDIRECT_ADDRESS)] = {"inst_heap_mapping_indirect_address",
+                                                              instrumentation_descriptor_heap_comp_function_7_offset};
+        funcs[size_t(FuncNames::UNTYPED)] = {"inst_heap_untyped", instrumentation_descriptor_heap_comp_function_8_offset};
+    }
+    return funcs[size_t(func_name)];
+}
 
 DescriptorHeapPass::DescriptorHeapPass(Module& module)
     : Pass(module, kOfflineModule), descriptor_heap_props(module.settings_.phys_dev_ext_props->descriptor_heap_props) {
@@ -58,7 +72,7 @@ DescriptorHeapPass::DescriptorHeapPass(Module& module)
 }
 
 uint32_t DescriptorHeapPass::GetLinkFunctionId(const FunctionNames func_name) {
-    return GetLinkFunction(link_function_id_[func_name], kOfflineFunction[func_name]);
+    return GetLinkFunction(link_function_id_[func_name], GetOfflineFunction(func_name));
 }
 
 // Unfortunately this is a duplicate of the util function because there is no spirv::ResourceInterfaceVariable

@@ -16,6 +16,7 @@
 #include "ray_tracing_objects.h"
 #include "descriptor_helper.h"
 #include "gpu_av_helper.h"
+#include "descriptor_heap_object.h"
 
 class PositiveGpuAVRayTracing : public GpuAVRayTracingTest {};
 
@@ -1819,4 +1820,182 @@ TEST_F(PositiveGpuAVRayTracing, TlasBuildUsingZeroAsBlasAddress) {
         m_device->Wait();
         m_errorMonitor->VerifyFound();
     }
+}
+
+TEST_F(PositiveGpuAVRayTracing, RaygenOneMissShaderOneClosestHitShaderDescriptorHeap) {
+    TEST_DESCRIPTION("Test debug printf in raygen, miss and closest hit shaders. Use descriptor heaps.");
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    AddRequiredExtensions(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::rayTracingPipeline);
+    AddRequiredFeature(vkt::Feature::accelerationStructure);
+    vkt::DescriptorHeap::AddDescriptorHeapRequirements(*this);
+    VkValidationFeaturesEXT validation_features = GetGpuAvValidationFeatures();
+    RETURN_IF_SKIP(InitFrameworkForRayTracingTest(&validation_features));
+    if (!CanEnableGpuAV(*this)) {
+        GTEST_SKIP() << "Requirements for GPU-AV are not met";
+    }
+    RETURN_IF_SKIP(InitState());
+    InitRenderTarget();
+
+    vkt::as::BuildGeometryInfoKHR blas = vkt::as::blueprint::BuildGeometryInfoSimpleOnDeviceBottomLevel(*m_device);
+
+    // Build Bottom Level Acceleration Structure
+    m_command_buffer.Begin();
+    blas.BuildCmdBuffer(m_command_buffer);
+    m_command_buffer.End();
+
+    m_default_queue->Submit(m_command_buffer);
+    m_device->Wait();
+
+    // Build Top Level Acceleration Structure
+    vkt::as::BuildGeometryInfoKHR tlas = vkt::as::blueprint::BuildGeometryInfoSimpleOnDeviceTopLevel(*m_device, *blas.GetDstAS());
+    m_command_buffer.Begin();
+    tlas.BuildCmdBuffer(m_command_buffer);
+    m_command_buffer.End();
+
+    m_default_queue->Submit(m_command_buffer);
+    m_device->Wait();
+
+    // Buffer used to count invocations for the 3 shader types
+    vkt::Buffer debug_buffer(*m_device, 3 * sizeof(uint32_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                             vkt::device_address);
+    m_command_buffer.Begin();
+    vk::CmdFillBuffer(m_command_buffer, debug_buffer, 0, debug_buffer.CreateInfo().size, 0);
+    m_command_buffer.End();
+    m_default_queue->SubmitAndWait(m_command_buffer);
+
+    vkt::DescriptorHeap desc_heap(*this);
+    desc_heap.CreateResourceHeap(1024, true);
+    const VkDeviceSize buffer_heap_offset = desc_heap.WriteBufferDescriptor(debug_buffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    const VkDeviceSize as_heap_offset = desc_heap.WriteAccelerationStructureDescriptor(*tlas.GetDstAS());
+
+    std::array<VkDescriptorSetAndBindingMappingEXT, 2> mappings;
+    mappings[0] = MakeSetAndBindingMapping(0, 0);
+    mappings[0].source = VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT;
+    mappings[0].sourceData.shaderRecordIndex = {};
+    mappings[0].sourceData.shaderRecordIndex.heapOffset = (uint32_t)buffer_heap_offset;
+    mappings[0].sourceData.shaderRecordIndex.shaderRecordOffset = 0;
+    assert(as_heap_offset > buffer_heap_offset);
+    mappings[0].sourceData.shaderRecordIndex.heapIndexStride = (uint32_t)(as_heap_offset - buffer_heap_offset);
+    mappings[0].sourceData.shaderRecordIndex.heapArrayStride = 0;  // Not used
+
+    mappings[1] = MakeSetAndBindingMapping(0, 1);
+    mappings[1].source = VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT;
+    mappings[1].sourceData.shaderRecordIndex = mappings[0].sourceData.shaderRecordIndex;
+    mappings[1].sourceData.shaderRecordIndex.shaderRecordOffset = 4;
+
+    VkShaderDescriptorSetAndBindingMappingInfoEXT mapping_info = vku::InitStructHelper();
+    mapping_info.mappingCount = size32(mappings);
+    mapping_info.pMappings = mappings.data();
+
+    vkt::rt::Pipeline pipeline(*this, m_device);
+    pipeline.AddCreateInfoFlags2(VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT);
+
+    const char* ray_gen = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(binding = 1, set = 0) uniform accelerationStructureEXT tlas;
+
+        layout(location = 0) rayPayloadEXT vec3 hit;
+
+        void main() {
+            vec3 ray_origin = vec3(0,0,-50);
+            vec3 ray_direction = vec3(0,0,1);
+            traceRayEXT(tlas, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, ray_origin, 0.01, ray_direction, 1000.0, 0);
+
+            // Will miss
+            ray_origin = vec3(0,0,-50);
+            ray_direction = vec3(0,0,-1);
+            traceRayEXT(tlas, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, ray_origin, 0.01, ray_direction, 1000.0, 0);
+
+            // Will miss
+            ray_origin = vec3(0,0,50);
+            ray_direction = vec3(0,0,1);
+            traceRayEXT(tlas, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, ray_origin, 0.01, ray_direction, 1000.0, 0);
+
+            ray_origin = vec3(0,0,50);
+            ray_direction = vec3(0,0,-1);
+            traceRayEXT(tlas, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, ray_origin, 0.01, ray_direction, 1000.0, 0);
+
+            // Will miss
+            ray_origin = vec3(0,0,0);
+            ray_direction = vec3(0,0,1);
+            traceRayEXT(tlas, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, ray_origin, 0.01, ray_direction, 1000.0, 0);
+        }
+    )glsl";
+    pipeline.SetGlslRayGenShader(ray_gen, nullptr, &mapping_info);
+
+    const char* miss = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(binding = 0, set = 0) buffer ssbo { uint counter; };
+        layout(binding = 1, set = 0) uniform accelerationStructureEXT tlas;
+
+        layout(location = 0) rayPayloadInEXT vec3 hit;
+
+        void main() {
+            atomicAdd(counter, 1);
+            hit = vec3(0.1, 0.2, 0.3);
+        }
+    )glsl";
+    pipeline.AddGlslMissShader(miss, nullptr, &mapping_info);
+
+    const char* closest_hit = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(binding = 1, set = 0) uniform accelerationStructureEXT tlas;
+
+        layout(shaderRecordEXT) buffer sbt {
+            uvec3 sbt_vec;
+        };
+
+        layout(location = 0) rayPayloadInEXT vec3 hit;
+        hitAttributeEXT vec2 baryCoord;
+
+        void main() {
+            const vec3 barycentricCoords = vec3(1.0f - baryCoord.x - baryCoord.y, baryCoord.x, baryCoord.y);
+            hit = barycentricCoords;
+        }
+    )glsl";
+    pipeline.AddGlslClosestHitShader(closest_hit, nullptr, &mapping_info);
+    pipeline.SetShaderRecordSize(3 * sizeof(uint32_t));
+    pipeline.Build();
+
+    // vec[0] == 1
+    // ==> Because of the offset computed as described in
+    // https://docs.vulkan.org/refpages/latest/refpages/source/VkDescriptorMappingSourceShaderRecordIndexEXT.html
+    // `shaderRecordIndex` in `shaderRecordIndex * heapIndexStride` will be 1
+    uint32_t vec[3] = {0, 1, 42};
+    pipeline.UpdateRayGenShaderRecord(0, vec, 3 * sizeof(uint32_t));
+    pipeline.UpdateMissShaderRecord(0, vec, 3 * sizeof(uint32_t));
+    pipeline.UpdateHitShaderRecord(0, vec, 3 * sizeof(uint32_t));
+
+    constexpr uint32_t frames_count = 14;
+    const uint32_t ray_gen_width = 1;
+    const uint32_t ray_gen_height = 4;
+    const uint32_t ray_gen_depth = 1;
+    const uint32_t ray_gen_rays_count = ray_gen_width * ray_gen_height * ray_gen_depth;
+    for (uint32_t frame = 0; frame < frames_count; ++frame) {
+        m_command_buffer.Begin();
+        desc_heap.BindResourceHeap(m_command_buffer);
+        vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline);
+        vkt::rt::TraceRaysSbt trace_rays_sbt = pipeline.GetTraceRaysSbt();
+
+        vk::CmdTraceRaysKHR(m_command_buffer, &trace_rays_sbt.ray_gen_sbt, &trace_rays_sbt.miss_sbt, &trace_rays_sbt.hit_sbt,
+                            &trace_rays_sbt.callable_sbt, ray_gen_width, ray_gen_height, ray_gen_depth);
+
+        m_command_buffer.End();
+
+        m_default_queue->SubmitAndWait(m_command_buffer);
+
+        m_errorMonitor->VerifyFound();
+    }
+
+    auto counter_ptr = (uint32_t*)debug_buffer.Memory().Map();
+
+    (void)counter_ptr;
+    debug_buffer.Memory().Unmap();
 }
