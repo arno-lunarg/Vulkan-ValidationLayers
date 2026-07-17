@@ -559,6 +559,8 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     struct DescriptorHeap {
         bool sampler_bound;
         bool resource_bound;
+        vku::safe_VkBindHeapInfoEXT bind_resource_heap_info;
+        vku::safe_VkBindHeapInfoEXT bind_sampler_heap_info;
         // If heap is from VkCommandBufferInheritanceDescriptorHeapInfoEXT
         bool is_sampler_inherited;
         bool is_resource_inherited;

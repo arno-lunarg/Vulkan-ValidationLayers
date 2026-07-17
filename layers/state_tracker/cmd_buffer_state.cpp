@@ -225,10 +225,12 @@ void CommandBuffer::DescriptorHeap::Update(const VkBindHeapInfoEXT& bind_info, b
 
     if (is_sampler) {
         sampler_bound = true;
+        bind_sampler_heap_info.initialize(&bind_info);
         sampler_reserved = reserved;
         sampler_range = range;
     } else {
         resource_bound = true;
+        bind_resource_heap_info.initialize(&bind_info);
         resource_reserved = reserved;
         resource_range = range;
     }

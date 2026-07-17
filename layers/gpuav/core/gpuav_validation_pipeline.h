@@ -129,6 +129,7 @@ class RestorablePipelineState {
     uint32_t push_descriptor_set_index_ = 0;
     std::vector<vku::safe_VkWriteDescriptorSet> push_descriptor_set_writes_;
     std::vector<PushConstantData> push_constants_data_;
+    std::vector<uint8_t> push_data_;
     std::vector<vvl::ShaderObject*> shader_objects_;
 };
 }  // namespace valpipe

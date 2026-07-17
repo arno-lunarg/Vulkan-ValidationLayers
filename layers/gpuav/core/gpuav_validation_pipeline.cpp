@@ -160,6 +160,7 @@ void RestorablePipelineState::Create(CommandBufferSubState& cb_state, VkPipeline
         last_bound.desc_set_pipeline_layout ? last_bound.desc_set_pipeline_layout->VkHandle() : VK_NULL_HANDLE;
 
     push_constants_data_ = cb_state.push_constant_data_chunks;
+    push_data_ = cb_state.push_data_value;
 
     descriptor_sets_.reserve(last_bound.ds_slots.size());
     for (std::size_t set_i = 0; set_i < last_bound.ds_slots.size(); set_i++) {
@@ -212,12 +213,25 @@ void RestorablePipelineState::Restore() const {
                                   shaders.data());
     }
 
-    for (std::size_t i = 0; i < descriptor_sets_.size(); i++) {
-        VkDescriptorSet descriptor_set = descriptor_sets_[i].first;
-        if (descriptor_set != VK_NULL_HANDLE) {
-            DispatchCmdBindDescriptorSets(cb_state_.VkHandle(), pipeline_bind_point_, desc_set_pipeline_layout_,
-                                          descriptor_sets_[i].second, 1, &descriptor_set,
-                                          static_cast<uint32_t>(dynamic_offsets_[i].size()), dynamic_offsets_[i].data());
+    const vvl::BindPoint vvl_bind_point = ConvertToVvlBindPoint(pipeline_bind_point_);
+    LastBound& last_bound = cb_state_.base.lastBound[vvl_bind_point];
+
+    if (last_bound.GetDescriptorMode() == vvl::DescriptorModeHeap) {
+        if (cb_state_.base.descriptor_heap.resource_bound) {
+            DispatchCmdBindResourceHeapEXT(cb_state_.VkHandle(), cb_state_.base.descriptor_heap.bind_resource_heap_info.ptr());
+        }
+        if (cb_state_.base.descriptor_heap.sampler_bound) {
+            DispatchCmdBindSamplerHeapEXT(cb_state_.VkHandle(), cb_state_.base.descriptor_heap.bind_sampler_heap_info.ptr());
+        }
+
+    } else {
+        for (std::size_t i = 0; i < descriptor_sets_.size(); i++) {
+            VkDescriptorSet descriptor_set = descriptor_sets_[i].first;
+            if (descriptor_set != VK_NULL_HANDLE) {
+                DispatchCmdBindDescriptorSets(cb_state_.VkHandle(), pipeline_bind_point_, desc_set_pipeline_layout_,
+                                              descriptor_sets_[i].second, 1, &descriptor_set,
+                                              static_cast<uint32_t>(dynamic_offsets_[i].size()), dynamic_offsets_[i].data());
+            }
         }
     }
 
@@ -231,6 +245,14 @@ void RestorablePipelineState::Restore() const {
         DispatchCmdPushConstants(cb_state_.VkHandle(), push_constant_range.layout, push_constant_range.stage_flags,
                                  push_constant_range.offset, static_cast<uint32_t>(push_constant_range.values.size()),
                                  push_constant_range.values.data());
+    }
+
+    if (!push_data_.empty()) {
+        VkPushDataInfoEXT info = vku::InitStructHelper();
+        info.offset = 0;
+        info.data.address = push_data_.data();
+        info.data.size = push_data_.size();
+        DispatchCmdPushDataEXT(cb_state_.VkHandle(), &info);
     }
 }
 }  // namespace valpipe
