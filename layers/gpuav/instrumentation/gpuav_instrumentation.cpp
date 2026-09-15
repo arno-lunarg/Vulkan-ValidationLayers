@@ -335,7 +335,7 @@ void UpdateInstrumentationDescSet(Validator& gpuav, CommandBufferSubState& cb_st
         // Errors count buffer
         {
             cmd_errors_counts_desc_buffer_info.range = VK_WHOLE_SIZE;
-            cmd_errors_counts_desc_buffer_info.buffer = cb_state.GetCmdErrorsCountsBuffer();
+            cmd_errors_counts_desc_buffer_info.buffer = cb_state.GetCmdErrorsCountsBuffer().VkHandle();
             cmd_errors_counts_desc_buffer_info.offset = 0;
 
             VkWriteDescriptorSet wds = vku::InitStructHelper();

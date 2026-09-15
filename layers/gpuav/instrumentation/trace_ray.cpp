@@ -333,7 +333,7 @@ void UpdateAccelerationStructureGpuState(Validator& gpuav, CommandBufferSubState
                                          const VkAccelerationStructureBuildGeometryInfoKHR* infos) {
     valpipe::ComputePipeline<AccelerationStructureGpuStateUpdateShader>& as_gpu_state_update_pipeline =
         cb.gpuav_.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<AccelerationStructureGpuStateUpdateShader>>(
-            cb.gpuav_, Location(vvl::Func::Empty));
+            cb.gpuav_, Location(vvl::Func::Empty), cb.base.GetLastBoundCompute().GetActionDescriptorMode());
 
     if (!as_gpu_state_update_pipeline.valid) {
         return;

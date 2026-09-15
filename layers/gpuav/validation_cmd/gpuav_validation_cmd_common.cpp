@@ -18,11 +18,14 @@
 #include "gpuav/validation_cmd/gpuav_validation_cmd_common.h"
 
 #include <vulkan/vulkan_core.h>
+#include <cstdint>
+#include <memory>
 
 #include "gpuav/core/gpuav.h"
-#include "gpuav/core/gpuav_constants.h"
 #include "gpuav/resources/gpuav_state_trackers.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
+#include "vulkan/utility/vk_struct_helper.hpp"
+#include "vulkan/vulkan_core.h"
 
 namespace gpuav {
 
@@ -73,6 +76,67 @@ void BindShaderPushConstantsHelper(Validator& gpuav, CommandBufferSubState& cb_s
     }
 }
 
+void BindHeapResourcesHelper(Validator& gpuav, CommandBufferSubState& cb_state, uint32_t cmd_index, uint32_t error_logger_index,
+                             const std::vector<VkWriteDescriptorSet>& descriptor_writes, const uint32_t push_constants_byte_size,
+                             const void* push_constants, bool bind_error_logging_desc_set) {
+    assert(cmd_index < gpuav.gpuav_settings.indices_buffer_count);
+    assert(error_logger_index < gpuav.gpuav_settings.indices_buffer_count);
+
+    constexpr uint32_t error_logging_buffers_count = 4;
+
+    VkDeviceSize pd_size = 0;
+    if (bind_error_logging_desc_set) {
+        pd_size += error_logging_buffers_count * sizeof(VkDeviceAddress);
+    }
+
+    for (const VkWriteDescriptorSet& wds : descriptor_writes) {
+        // Assume only buffers are used
+        assert(wds.pBufferInfo != nullptr);
+        // Assume no buffer descriptor arrays are used
+        assert(wds.descriptorCount == 1);
+        pd_size += sizeof(VkDeviceAddress);
+    }
+
+    // Any push constants byte size below 4 is illegal. Can come from empty push constant struct
+    if (push_constants_byte_size >= 4) {
+        pd_size += push_constants_byte_size;
+    }
+    assert(pd_size <= gpuav.device_state->phys_dev_ext_props.descriptor_heap_props.maxPushDataSize);
+
+    auto push_data = std::make_unique<uint8_t[]>(pd_size);
+    uint8_t* push_data_ptr = &push_data[0];
+
+    if (bind_error_logging_desc_set) {
+        static_assert(error_logging_buffers_count == 4);
+        auto addr = (VkDeviceAddress*)push_data_ptr;
+        addr[glsl::kBindingDiagErrorBuffer] = cb_state.error_output_buffer_range_.offset_address;
+        addr[glsl::kBindingDiagActionIndex] = gpuav.global_indices_buffer_.Address() + cmd_index + sizeof(uint32_t);
+        addr[glsl::kBindingDiagCmdResourceIndex] = gpuav.global_indices_buffer_.Address() + error_logger_index * sizeof(uint32_t);
+        addr[glsl::kBindingDiagCmdErrorsCount] = cb_state.GetCmdErrorsCountsBuffer().Address();
+    }
+
+    push_data_ptr += error_logging_buffers_count * sizeof(VkDeviceAddress);
+
+    // Tightly pack buffer addresses,
+    // in the order defined by descriptor_writes
+    for (const VkWriteDescriptorSet& wds : descriptor_writes) {
+        auto addr = (VkDeviceAddress*)push_data_ptr;
+        VkBufferDeviceAddressInfo bdai = vku::InitStructHelper();
+        bdai.buffer = wds.pBufferInfo->buffer;
+        *addr = DispatchGetBufferDeviceAddress(gpuav.device, &bdai);
+
+        push_data_ptr += sizeof(VkDeviceAddress);
+    }
+
+    if (push_constants_byte_size >= 4) {
+        std::memcpy(push_data_ptr, push_constants, push_constants_byte_size);
+    }
+    VkPushDataInfoEXT pdi = vku::InitStructHelper();
+    pdi.offset = 0;
+    pdi.data.address = &push_data[0];
+    pdi.data.size = pd_size;
+}
+
 }  // namespace internal
 
 ValidationCommandsGpuavState::ValidationCommandsGpuavState(Validator& gpuav, const Location& loc) : gpuav_(gpuav) {
@@ -117,6 +181,8 @@ ValidationCommandsCbState::ValidationCommandsCbState(Validator& gpuav, CommandBu
         }
     }
 
+    // #ARNO_WIP I essentially need my desc heap code to match this
+
     std::array<VkWriteDescriptorSet, 4> validation_cmd_descriptor_writes = {};
 
     VkDescriptorBufferInfo error_output_buffer_desc_info = {};
@@ -151,7 +217,7 @@ ValidationCommandsCbState::ValidationCommandsCbState(Validator& gpuav, CommandBu
     validation_cmd_descriptor_writes[2].dstBinding = glsl::kBindingDiagCmdResourceIndex;
 
     VkDescriptorBufferInfo cmd_errors_count_buffer_desc_info = {};
-    cmd_errors_count_buffer_desc_info.buffer = cb.GetCmdErrorsCountsBuffer();
+    cmd_errors_count_buffer_desc_info.buffer = cb.GetCmdErrorsCountsBuffer().VkHandle();
     cmd_errors_count_buffer_desc_info.offset = 0;
     cmd_errors_count_buffer_desc_info.range = VK_WHOLE_SIZE;
 

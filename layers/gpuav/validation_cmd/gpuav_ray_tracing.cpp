@@ -66,7 +66,7 @@ void TraceRaysIndirect(Validator& gpuav, const Location& loc, CommandBufferSubSt
         gpuav.shared_resources_cache.GetOrCreate<ValidationCommandsGpuavState>(gpuav, loc);
     valpipe::ComputePipeline<TraceRaysValidationShader>& validation_pipeline =
         gpuav.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<TraceRaysValidationShader>>(
-            gpuav, loc, val_cmd_gpuav_state.error_logging_desc_set_layout_);
+            gpuav, loc, last_bound.GetActionDescriptorMode(), val_cmd_gpuav_state.error_logging_desc_set_layout_);
     if (!validation_pipeline.valid) {
         gpuav.InternalError(cb_state.VkHandle(), loc, "Failed to create TraceRaysValidationShader.");
         return;
@@ -429,7 +429,7 @@ void TLAS(Validator& gpuav, const Location& loc, CommandBufferSubState& cb_state
         gpuav.shared_resources_cache.GetOrCreate<ValidationCommandsGpuavState>(gpuav, loc);
     valpipe::ComputePipeline<BuildAccelerationStructuresValidationShader>& validation_pipeline =
         gpuav.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<BuildAccelerationStructuresValidationShader>>(
-            gpuav, loc, val_cmd_gpuav_state.error_logging_desc_set_layout_);
+            gpuav, loc, last_bound.GetActionDescriptorMode(), val_cmd_gpuav_state.error_logging_desc_set_layout_);
     if (!validation_pipeline.valid) {
         return;
     }
@@ -765,14 +765,14 @@ void BLAS(Validator& gpuav, const Location& loc, CommandBufferSubState& cb_state
 
     valpipe::ComputePipeline<BLASValidationShader>& blas_pipeline =
         gpuav.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<BLASValidationShader>>(
-            gpuav, loc, val_cmd_gpuav_state.error_logging_desc_set_layout_);
+            gpuav, loc, last_bound.GetActionDescriptorMode(), val_cmd_gpuav_state.error_logging_desc_set_layout_);
     if (!blas_pipeline.valid) {
         return;
     }
 
     valpipe::ComputePipeline<MemcmpShader>& memcmp_pipeline =
         gpuav.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<MemcmpShader>>(
-            gpuav, loc, val_cmd_gpuav_state.error_logging_desc_set_layout_);
+            gpuav, loc, last_bound.GetActionDescriptorMode(), val_cmd_gpuav_state.error_logging_desc_set_layout_);
     if (!memcmp_pipeline.valid) {
         return;
     }

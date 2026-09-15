@@ -145,7 +145,8 @@ void FirstInstance(Validator& gpuav, CommandBufferSubState& cb_state, const Loca
             gpuav.shared_resources_cache.GetOrCreate<ValidationCommandsGpuavState>(gpuav, loc);
         valpipe::ComputePipeline<FirstInstanceValidationShader>& validation_pipeline =
             gpuav.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<FirstInstanceValidationShader>>(
-                gpuav, loc, val_cmd_gpuav_state.error_logging_desc_set_layout_);
+                gpuav, loc, cb_state.base.GetLastBoundCompute().GetActionDescriptorMode(),
+                val_cmd_gpuav_state.error_logging_desc_set_layout_);
         if (!validation_pipeline.valid) {
             gpuav.InternalError(cb_state.VkHandle(), loc, "Failed to create FirstInstanceValidationShader.");
             return;
@@ -390,7 +391,8 @@ void CountBuffer(Validator& gpuav, CommandBufferSubState& cb_state, const Locati
             gpuav.shared_resources_cache.GetOrCreate<ValidationCommandsGpuavState>(gpuav, loc);
         valpipe::ComputePipeline<CountBufferValidationShader>& validation_pipeline =
             gpuav.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<CountBufferValidationShader>>(
-                gpuav, loc, val_cmd_gpuav_state.error_logging_desc_set_layout_);
+                gpuav, loc, cb_state.base.GetLastBoundCompute().GetActionDescriptorMode(),
+                val_cmd_gpuav_state.error_logging_desc_set_layout_);
         if (!validation_pipeline.valid) {
             gpuav.InternalError(cb_state.VkHandle(), loc, "Failed to create CountBufferValidationShader.");
             return;
@@ -551,7 +553,8 @@ void DrawMeshIndirect(Validator& gpuav, CommandBufferSubState& cb_state, const L
             gpuav.shared_resources_cache.GetOrCreate<ValidationCommandsGpuavState>(gpuav, loc);
         valpipe::ComputePipeline<MeshValidationShader>& validation_pipeline =
             gpuav.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<MeshValidationShader>>(
-                gpuav, loc, val_cmd_gpuav_state.error_logging_desc_set_layout_);
+                gpuav, loc, cb_state.base.GetLastBoundCompute().GetActionDescriptorMode(),
+                val_cmd_gpuav_state.error_logging_desc_set_layout_);
         if (!validation_pipeline.valid) {
             gpuav.InternalError(cb_state.VkHandle(), loc, "Failed to create MeshValidationShader.");
             return;
@@ -839,7 +842,8 @@ void DrawIndexedIndirectIndexBuffer(Validator& gpuav, CommandBufferSubState& cb_
             return;
         }
         valpipe::ComputePipeline<SetupDrawCountDispatchIndirectShader>& setup_validation_dispatch_pipeline =
-            gpuav.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<SetupDrawCountDispatchIndirectShader>>(gpuav, loc);
+            gpuav.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<SetupDrawCountDispatchIndirectShader>>(
+                gpuav, loc, cb_state.base.GetLastBoundCompute().GetActionDescriptorMode());
         if (!setup_validation_dispatch_pipeline.valid) {
             gpuav.InternalError(cb_state.VkHandle(), loc, "Failed to create SetupDrawCountDispatchIndirectShader.");
             return;
@@ -848,7 +852,8 @@ void DrawIndexedIndirectIndexBuffer(Validator& gpuav, CommandBufferSubState& cb_
             gpuav.shared_resources_cache.GetOrCreate<ValidationCommandsGpuavState>(gpuav, loc);
         valpipe::ComputePipeline<DrawIndexedIndirectIndexBufferShader>& validation_pipeline =
             gpuav.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<DrawIndexedIndirectIndexBufferShader>>(
-                gpuav, loc, val_cmd_gpuav_state.error_logging_desc_set_layout_);
+                gpuav, loc, cb_state.base.GetLastBoundCompute().GetActionDescriptorMode(),
+                val_cmd_gpuav_state.error_logging_desc_set_layout_);
         if (!validation_pipeline.valid) {
             gpuav.InternalError(cb_state.VkHandle(), loc, "Failed to create DrawIndexedIndirectIndexBufferShader.");
             return;

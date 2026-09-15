@@ -181,6 +181,8 @@ struct LastBound {
     // Will be Unknown if shader is not using any descriptor
     // GetActionDescriptorMode() will check the bound pipeline/shaders if Unknown
     vvl::DescriptorMode GetDescriptorMode() const { return descriptor_mode; };
+    // #ARNO_FIX ok so when using descriptor heaps but without actually binding
+    // any heap nor using push data, I can end up in the "bind error logging desc set" path
     void SetDescriptorMode(vvl::DescriptorMode new_mode, vvl::Func function) {
         previous_descriptor_mode = descriptor_mode;
         previous_set_descriptor_mode = set_descriptor_mode;

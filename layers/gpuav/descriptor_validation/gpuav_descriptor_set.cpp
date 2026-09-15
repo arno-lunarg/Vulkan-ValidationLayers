@@ -27,6 +27,7 @@
 #include "gpuav/resources/gpuav_shader_resources.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 #include "gpuav/shaders/setup/descriptor_encoding_update.h"
+#include "state_tracker/bind_point.h"
 #include "state_tracker/descriptor_sets.h"
 #include "containers/limits.h"
 #include "utils/image_utils.h"
@@ -269,7 +270,7 @@ void DescriptorSetSubState::PerformPushDescriptorsUpdate(vvl::CommandBuffer& cb,
 
     valpipe::ComputePipeline<DescriptorEncodingUpdateShader>& descriptor_encoding_update_pipeline =
         cb_sub_state.gpuav_.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<DescriptorEncodingUpdateShader>>(
-            cb_sub_state.gpuav_, Location(vvl::Func::Empty));
+            cb_sub_state.gpuav_, Location(vvl::Func::Empty), cb.GetLastBoundCompute().GetActionDescriptorMode());
 
     if (!descriptor_encoding_update_pipeline.valid) {
         return;

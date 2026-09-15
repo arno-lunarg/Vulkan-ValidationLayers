@@ -22,14 +22,16 @@
 #include "gpuav/resources/gpuav_state_trackers.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 #include "state_tracker/bind_point.h"
+#include "state_tracker/descriptor_mode.h"
 #include "state_tracker/pipeline_state.h"
-#include "state_tracker/render_pass_state.h"
+#include "vulkan/utility/vk_struct_helper.hpp"
+#include "vulkan/vulkan_core.h"
 
 namespace gpuav {
 namespace valpipe {
 namespace internal {
 
-bool CreateComputePipelineHelper(Validator& gpuav, const Location& loc,
+bool CreateComputePipelineHelper(Validator& gpuav, const Location& loc, vvl::DescriptorMode descriptor_mode,
                                  const std::vector<VkDescriptorSetLayoutBinding> specific_bindings,
                                  VkDescriptorSetLayout additional_desc_set_layout, uint32_t push_constants_byte_size,
                                  uint32_t spirv_size, const uint32_t* spirv, VkDevice& out_device,
@@ -78,14 +80,18 @@ bool CreateComputePipelineHelper(Validator& gpuav, const Location& loc,
         return false;
     }
 
-    VkComputePipelineCreateInfo compute_validation_pipeline_ci = vku::InitStructHelper();
-    compute_validation_pipeline_ci.stage = vku::InitStructHelper();
-    compute_validation_pipeline_ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    compute_validation_pipeline_ci.stage.module = out_shader_module;
-    compute_validation_pipeline_ci.stage.pName = "main";
-    compute_validation_pipeline_ci.layout = out_pipeline_layout;
-    result =
-        DispatchCreateComputePipelines(gpuav.device, VK_NULL_HANDLE, 1, &compute_validation_pipeline_ci, nullptr, &out_pipeline);
+    VkPipelineCreateFlags2CreateInfo pcf = vku::InitStructHelper();
+    VkComputePipelineCreateInfo cpci = vku::InitStructHelper();
+    if (descriptor_mode == vvl::DescriptorModeHeap) {
+        pcf.flags = VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
+        cpci.pNext = &pcf;
+    }
+    cpci.stage = vku::InitStructHelper();
+    cpci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    cpci.stage.module = out_shader_module;
+    cpci.stage.pName = "main";
+    cpci.layout = out_pipeline_layout;
+    result = DispatchCreateComputePipelines(gpuav.device, VK_NULL_HANDLE, 1, &cpci, nullptr, &out_pipeline);
     if (result != VK_SUCCESS) {
         gpuav.InternalError(gpuav.device, loc, "Failed to create compute validation pipeline.");
         return false;
@@ -156,25 +162,29 @@ void RestorablePipelineState::Create(CommandBufferSubState& cb_state, VkPipeline
         }
     }
 
-    desc_set_pipeline_layout_ =
-        last_bound.desc_set_pipeline_layout ? last_bound.desc_set_pipeline_layout->VkHandle() : VK_NULL_HANDLE;
+    if (last_bound.GetActionDescriptorMode() != vvl::DescriptorModeHeap) {
+        desc_set_pipeline_layout_ =
+            last_bound.desc_set_pipeline_layout ? last_bound.desc_set_pipeline_layout->VkHandle() : VK_NULL_HANDLE;
 
-    push_constants_data_ = cb_state.push_constant_data_chunks;
+        push_constants_data_ = cb_state.push_constant_data_chunks;
 
-    descriptor_sets_.reserve(last_bound.ds_slots.size());
-    for (std::size_t set_i = 0; set_i < last_bound.ds_slots.size(); set_i++) {
-        const auto& bound_descriptor_set = last_bound.ds_slots[set_i].ds_state;
-        if (bound_descriptor_set) {
-            descriptor_sets_.emplace_back(bound_descriptor_set->VkHandle(), static_cast<uint32_t>(set_i));
-            if (bound_descriptor_set->IsPushDescriptor()) {
-                push_descriptor_set_index_ = static_cast<uint32_t>(set_i);
+        descriptor_sets_.reserve(last_bound.ds_slots.size());
+        for (std::size_t set_i = 0; set_i < last_bound.ds_slots.size(); set_i++) {
+            const auto& bound_descriptor_set = last_bound.ds_slots[set_i].ds_state;
+            if (bound_descriptor_set) {
+                descriptor_sets_.emplace_back(bound_descriptor_set->VkHandle(), static_cast<uint32_t>(set_i));
+                if (bound_descriptor_set->IsPushDescriptor()) {
+                    push_descriptor_set_index_ = static_cast<uint32_t>(set_i);
+                }
+                dynamic_offsets_.push_back(last_bound.ds_slots[set_i].dynamic_offsets);
             }
-            dynamic_offsets_.push_back(last_bound.ds_slots[set_i].dynamic_offsets);
         }
-    }
 
-    if (last_bound.push_descriptor_set) {
-        push_descriptor_set_writes_ = last_bound.push_descriptor_set->GetWrites();
+        if (last_bound.push_descriptor_set) {
+            push_descriptor_set_writes_ = last_bound.push_descriptor_set->GetWrites();
+        }
+    } else {
+        push_data_ = cb_state.push_data_value;
     }
 
     // Do not handle cb_state.active_render_pass->use_dynamic_rendering_inherited for now
@@ -231,6 +241,14 @@ void RestorablePipelineState::Restore() const {
         DispatchCmdPushConstants(cb_state_.VkHandle(), push_constant_range.layout, push_constant_range.stage_flags,
                                  push_constant_range.offset, static_cast<uint32_t>(push_constant_range.values.size()),
                                  push_constant_range.values.data());
+    }
+
+    if (!push_data_.empty()) {
+        VkPushDataInfoEXT pdi = vku::InitStructHelper();
+        pdi.offset = 0;
+        pdi.data.address = push_data_.data();
+        pdi.data.size = push_data_.size();
+        DispatchCmdPushDataEXT(cb_state_.VkHandle(), &pdi);
     }
 }
 }  // namespace valpipe

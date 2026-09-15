@@ -101,7 +101,8 @@ void CopyBufferToImage(Validator& gpuav, const Location& loc, CommandBufferSubSt
         gpuav.shared_resources_cache.GetOrCreate<ValidationCommandsGpuavState>(gpuav, loc);
     valpipe::ComputePipeline<CopyBufferToImageValidationShader>& validation_pipeline =
         gpuav.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<CopyBufferToImageValidationShader>>(
-            gpuav, loc, val_cmd_gpuav_state.error_logging_desc_set_layout_);
+            gpuav, loc, cb_state.base.GetLastBoundCompute().GetActionDescriptorMode(),
+            val_cmd_gpuav_state.error_logging_desc_set_layout_);
     if (!validation_pipeline.valid) {
         gpuav.InternalError(cb_state.VkHandle(), loc, "Failed to create CopyBufferToImageValidationShader.");
         return;

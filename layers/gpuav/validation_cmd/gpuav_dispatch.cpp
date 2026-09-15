@@ -60,7 +60,7 @@ void DispatchIndirect(Validator& gpuav, const Location& loc, CommandBufferSubSta
     }
 
     // TODO https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/12657
-    if (last_bound.GetDescriptorMode() == vvl::DescriptorModeBuffer || last_bound.GetDescriptorMode() == vvl::DescriptorModeHeap) {
+    if (last_bound.GetDescriptorMode() == vvl::DescriptorModeBuffer) {
         return;
     }
 
@@ -68,7 +68,7 @@ void DispatchIndirect(Validator& gpuav, const Location& loc, CommandBufferSubSta
         gpuav.shared_resources_cache.GetOrCreate<ValidationCommandsGpuavState>(gpuav, loc);
     valpipe::ComputePipeline<DispatchValidationShader>& validation_pipeline =
         gpuav.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<DispatchValidationShader>>(
-            gpuav, loc, val_cmd_gpuav_state.error_logging_desc_set_layout_);
+            gpuav, loc, last_bound.GetActionDescriptorMode(), val_cmd_gpuav_state.error_logging_desc_set_layout_);
     if (!validation_pipeline.valid) {
         gpuav.InternalError(cb_state.VkHandle(), loc, "Failed to create DispatchValidationShader.");
         return;

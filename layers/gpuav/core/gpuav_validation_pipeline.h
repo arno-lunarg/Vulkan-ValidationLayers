@@ -18,6 +18,7 @@
 #pragma once
 
 #include "containers/limits.h"
+#include "state_tracker/descriptor_mode.h"
 #include "state_tracker/push_constant_data.h"
 
 #include <vector>
@@ -43,7 +44,7 @@ struct BoundStorageBuffer {
 };
 
 namespace internal {
-[[nodiscard]] bool CreateComputePipelineHelper(Validator& gpuav, const Location& loc,
+[[nodiscard]] bool CreateComputePipelineHelper(Validator& gpuav, const Location& loc, vvl::DescriptorMode descriptor_mode,
                                                const std::vector<VkDescriptorSetLayoutBinding> specific_bindings,
                                                VkDescriptorSetLayout additional_desc_set_layout, uint32_t push_constants_byte_size,
                                                uint32_t spirv_size, const uint32_t* spirv, VkDevice& out_device,
@@ -61,6 +62,7 @@ void BindShaderResourcesHelper(Validator& gpuav, CommandBufferSubState& cb_state
 }  // namespace internal
 
 // ComputePipeline<> is an helper class to create compute pipeline used by GPU-AV to setup things for validation.
+// The way descriptors are managed internally is *fixed* at construction time.
 // When creating such compute pipelines, typically only the compute shader changes, the setup boilerplate is the same. This helper
 // only asks for a description of the compute shader, and handles the boilerplate.
 // The compute shader description is stored represented by the ShaderResources template argument.
@@ -69,9 +71,11 @@ void BindShaderResourcesHelper(Validator& gpuav, CommandBufferSubState& cb_state
 template <typename ShaderResources>
 class ComputePipeline {
   public:
-    ComputePipeline(Validator& gpuav, const Location& loc, VkDescriptorSetLayout error_logging_desc_set = VK_NULL_HANDLE) {
+    ComputePipeline(Validator& gpuav, const Location& loc, vvl::DescriptorMode descriptor_mode,
+                    VkDescriptorSetLayout error_logging_desc_set = VK_NULL_HANDLE)
+        : descriptor_mode_(descriptor_mode) {
         std::vector<VkDescriptorSetLayoutBinding> specific_bindings = ShaderResources::GetDescriptorSetLayoutBindings();
-        valid = internal::CreateComputePipelineHelper(gpuav, loc, specific_bindings, error_logging_desc_set,
+        valid = internal::CreateComputePipelineHelper(gpuav, loc, descriptor_mode, specific_bindings, error_logging_desc_set,
                                                       sizeof(ShaderResources::push_constants),
                                                       uint32_t(ShaderResources::GetSpirvSize()), ShaderResources::GetSpirv(),
                                                       device, specific_desc_set_layout, pipeline_layout, shader_module, pipeline);
@@ -80,6 +84,8 @@ class ComputePipeline {
     ~ComputePipeline() {
         internal::DestroyComputePipelineHelper(device, specific_desc_set_layout, pipeline_layout, shader_module, pipeline);
     }
+
+    vvl::DescriptorMode GetDescriptorMode() const { return descriptor_mode_; }
 
     [[nodiscard]] bool BindShaderResources(Validator& gpuav, CommandBufferSubState& cb_state,
                                            const ShaderResources& shader_resources) {
@@ -101,6 +107,7 @@ class ComputePipeline {
     }
 
     VkDevice device = VK_NULL_HANDLE;
+    const vvl::DescriptorMode descriptor_mode_ = vvl::DescriptorModeUnknown;
     VkDescriptorSetLayout specific_desc_set_layout = VK_NULL_HANDLE;
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
     VkShaderModule shader_module = VK_NULL_HANDLE;
@@ -129,6 +136,7 @@ class RestorablePipelineState {
     uint32_t push_descriptor_set_index_ = 0;
     std::vector<vku::safe_VkWriteDescriptorSet> push_descriptor_set_writes_;
     std::vector<PushConstantData> push_constants_data_;
+    std::vector<uint8_t> push_data_;
     std::vector<vvl::ShaderObject*> shader_objects_;
 };
 }  // namespace valpipe
