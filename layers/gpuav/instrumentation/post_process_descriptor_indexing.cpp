@@ -13,6 +13,9 @@
  * limitations under the License.
  */
 
+#include <filesystem>
+#include <sstream>
+
 #include "drawdispatch/descriptor_validator.h"
 #include "gpuav/core/gpuav.h"
 #include "gpuav/core/gpuav_constants.h"
@@ -22,6 +25,7 @@
 #include "state_tracker/pipeline_state.h"
 #include "state_tracker/shader_module.h"
 #include "state_tracker/shader_object_state.h"
+#include "utils/shader_utils.h"
 
 #include "profiling/profiling.h"
 
@@ -149,6 +153,9 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                                                                                   const Location& submission_loc) {
         VVL_ZoneScoped;
 
+        // Shaders already dumped to disk because of an error (debugging aid)
+        vvl::unordered_set<uint32_t> dumped_shader_ids;
+
         // We loop each vkCmdBindDescriptorSet, find each VkDescriptorSet that was used in the command buffer, and check
         // its post process buffer for which descriptor was accessed Only check a VkDescriptorSet once, might be bound
         // multiple times in a single command buffer
@@ -172,8 +179,9 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                             const uint32_t unique_shader_id = slot.meta_data & glsl::kShaderIdMask;
                             const uint32_t error_logger_i = (slot.meta_data & glsl::kPostProcessMetaMaskErrorLoggerIndex) >>
                                                             glsl::kPostProcessMetaShiftErrorLoggerIndex;
-                            descriptor_access_map[unique_shader_id].emplace_back(DescriptorAccess{
-                                binding, descriptor_i, slot.variable_id, slot.instruction_position_offset, error_logger_i});
+                            descriptor_access_map[unique_shader_id].emplace_back(
+                                DescriptorAccess{binding, descriptor_i, slot.variable_id, slot.instruction_position_offset,
+                                                 error_logger_i, slot.descriptor_index});
                         }
                     }
                 }
@@ -202,6 +210,25 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                 }
 
                 context.SetOriginalSpirv(&it->second.original_spirv);
+
+                // Debugging aid: add the shaders of the pipeline/shader object to the error object list
+                LogObjectList shader_objlist;
+                if (pipeline_state) {
+                    for (const ShaderStageState& stage_state : pipeline_state->stage_states) {
+                        // Null when the shader module was inlined in the pipeline
+                        if (stage_state.module_state && stage_state.module_state->VkHandle() != VK_NULL_HANDLE) {
+                            shader_objlist.add(stage_state.module_state->VkHandle());
+                        }
+                    }
+                } else if (shader_object_state) {
+                    shader_objlist.add(shader_object_state->VkHandle());
+                }
+
+                const std::string spirv_dump_path_prefix = "gpuav_error_shader_" + std::to_string(unique_shader_id);
+                const std::string original_spirv_dump_path =
+                    std::filesystem::absolute(spirv_dump_path_prefix + "_original.spv").string();
+                const std::string instrumented_spirv_dump_path =
+                    std::filesystem::absolute(spirv_dump_path_prefix + "_instrumented.spv").string();
 
                 const uint32_t invalid_index_command = gpuav.gpuav_settings.invalid_index_command;
                 for (const DescriptorAccess& descriptor_access : descriptor_accesses) {
@@ -253,12 +280,40 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
 
                     const CommandBufferSubState::CommandErrorLogger& cmd_error_logger =
                         cb.GetErrorLogger(descriptor_access.error_logger_i);
-                    context.SetObjlistForGpuAv(&cmd_error_logger.objlist);
+                    LogObjectList access_objlist(cmd_error_logger.objlist);
+                    access_objlist.add(shader_objlist);
+                    context.SetObjlistForGpuAv(&access_objlist);
                     std::string debug_region_name = vvl::CommandBuffer::GetDebugRegionName(
                         cb.base.GetLabelCommands(), cmd_error_logger.label_cmd_i, cb_info.initial_label_stack);
 
                     Location access_loc(cmd_error_logger.loc.Get(), debug_region_name);
                     context.SetLocationForGpuAv(access_loc);
+
+                    // Debug info, only shows up in the message if an error is actually emitted
+                    std::ostringstream debug_info;
+                    debug_info << "[GPU-AV debug] DescriptorAccess { binding = " << descriptor_access.binding
+                               << ", index = " << descriptor_access.index << ", variable_id = " << descriptor_access.variable_id
+                               << ", instruction_position_offset = " << descriptor_access.instruction_position_offset
+                               << ", error_logger_i = " << descriptor_access.error_logger_i
+                               << ", shader_descriptor_index = " << descriptor_access.shader_descriptor_index << " }";
+                    if (descriptor_access.shader_descriptor_index != descriptor_access.index) {
+                        debug_info << " <-- MISMATCH: slot position index != shader descriptor index";
+                    }
+                    debug_info << "\n[GPU-AV debug] Original SPIR-V dumped to: " << original_spirv_dump_path;
+                    debug_info << "\n[GPU-AV debug] Instrumented SPIR-V dumped to: " << instrumented_spirv_dump_path;
+                    context.SetDebugInfoForGpuAv(debug_info.str());
+
+                    // Note: can't rely on ValidateBindingDynamic's return value, it is the "abort call" value returned by the
+                    // debug callback, not whether an error was logged. Dump when the error message is being built instead.
+                    context.SetOnErrorForGpuAv([&, shader_id = unique_shader_id]() {
+                        if (dumped_shader_ids.insert(shader_id).second) {
+                            const std::vector<uint32_t>& original_spirv = it->second.original_spirv;
+                            DumpSpirvToFile(original_spirv_dump_path, original_spirv.data(), original_spirv.size());
+                            const std::vector<uint32_t>& instrumented_spirv = it->second.instrumented_spirv;
+                            DumpSpirvToFile(instrumented_spirv_dump_path, instrumented_spirv.data(), instrumented_spirv.size());
+                        }
+                    });
+
                     context.ValidateBindingDynamic(*resource_variable, *descriptor_binding, descriptor_access.index);
                 }
             }

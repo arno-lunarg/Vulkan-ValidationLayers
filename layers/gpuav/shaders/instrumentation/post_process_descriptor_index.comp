@@ -23,7 +23,7 @@
 layout(buffer_reference, buffer_reference_align = 4, scalar) buffer DescriptorIndexPostProcess {
     // size of descriptor count (including all array elements)
     // Used to mark which indexes were accessed
-    uvec3 slot[]; // PostProcessDescriptorIndexSlot
+    uvec4 slot[]; // PostProcessDescriptorIndexSlot
 };
 
 layout(set = kInstDefaultDescriptorSet, binding = kBindingInstPostProcess, scalar) buffer PostProcessSSBO {
@@ -40,5 +40,5 @@ void inst_post_process_descriptor_index(const uint desc_set, const uint binding,
 
     // The index has been accessed, write out for post processing
     const uint binding_layout_index = binding_layout_offset + desc_index;
-    descriptor_index_post_process.slot[binding_layout_index] = uvec3(kPostProcessMetaMaskAccessed | cmd_id | SpecConstantLinkShaderId, variable_id, inst_offset);
+    descriptor_index_post_process.slot[binding_layout_index] = uvec4(kPostProcessMetaMaskAccessed | cmd_id | SpecConstantLinkShaderId, variable_id, inst_offset, desc_index);
 }

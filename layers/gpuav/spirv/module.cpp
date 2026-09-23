@@ -1088,5 +1088,13 @@ void Module::InternalError(const char* tag, const std::string& message) {
     }
 }
 
+void Module::LogInfo(const char* tag, const std::string& message) {
+    if (debug_report_) {
+        debug_report_->LogMessage(kInformationBit, tag, {}, interface_.loc, message);
+    } else {
+        std::cout << "[" << tag << "] " << message << '\n';
+    }
+}
+
 }  // namespace spirv
 }  // namespace gpuav

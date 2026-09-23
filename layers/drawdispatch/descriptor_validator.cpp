@@ -131,6 +131,13 @@ std::string DescriptorValidator::DescribeInstruction() const {
         ss << '\n';
         ::spirv::FindShaderSource(ss, *original_spirv, instruction_position_offset, false);
     }
+    if (!gpuav_debug_info.empty()) {
+        ss << '\n' << gpuav_debug_info;
+    }
+    // Only ever called while building an error message
+    if (gpuav_on_error) {
+        gpuav_on_error();
+    }
     return ss.str();
 }
 

@@ -821,7 +821,8 @@ void GpuShaderInstrumentor::PostCallRecordCreateShadersEXT(VkDevice device, uint
         }
 
         instrumented_shaders_map_.insert_or_assign(instrumentation_data.unique_shader_id, VK_NULL_HANDLE, VK_NULL_HANDLE,
-                                                   shader_handle, std::move(code), std::move(instrumentation_data.status.device));
+                                                   shader_handle, std::move(code), std::move(instrumentation_data.status.device),
+                                                   std::move(instrumentation_data.instrumented_spirv));
     }
 }
 
@@ -1488,7 +1489,7 @@ bool GpuShaderInstrumentor::PreCallRecordPipelineCreationShaderInstrumentation(
                 continue;
             }
         }
-        std::vector<uint32_t> instrumented_spirv;
+        std::vector<uint32_t>& instrumented_spirv = instrumentation_metadata.instrumented_spirv;
         const uint32_t unique_shader_id = unique_shader_module_id_++;
 
         interface.unique_shader_id = unique_shader_id;
@@ -1590,7 +1591,8 @@ void GpuShaderInstrumentor::PostCallRecordPipelineCreationShaderInstrumentation(
 
         instrumented_shaders_map_.insert_or_assign(instrumentation_metadata.unique_shader_id, pipeline_state.VkHandle(),
                                                    shader_module_handle, VK_NULL_HANDLE, std::move(code),
-                                                   std::move(instrumentation_metadata.status.device));
+                                                   std::move(instrumentation_metadata.status.device),
+                                                   std::move(instrumentation_metadata.instrumented_spirv));
     }
 }
 
@@ -1793,9 +1795,9 @@ bool GpuShaderInstrumentor::PreCallRecordPipelineCreationShaderInstrumentationGP
                 if (modified_module_state && modified_module_state->spirv) {
                     original_spirv_copy = modified_module_state->spirv->words_;
                 }
-                instrumented_shaders_map_.insert_or_assign(unique_shader_id, modified_library_ci->pLibraries[modified_lib_i],
-                                                           instrumented_shader_module, VK_NULL_HANDLE,
-                                                           std::move(original_spirv_copy), std::move(stage_status.device));
+                instrumented_shaders_map_.insert_or_assign(
+                    unique_shader_id, modified_library_ci->pLibraries[modified_lib_i], instrumented_shader_module, VK_NULL_HANDLE,
+                    std::move(original_spirv_copy), std::move(stage_status.device), std::move(instrumented_spirv));
             }
         }
 

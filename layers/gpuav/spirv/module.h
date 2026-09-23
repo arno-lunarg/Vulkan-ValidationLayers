@@ -120,6 +120,7 @@ class Module {
     // Used if need to report error/warning
     void InternalWarning(const char* tag, const std::string& message);
     void InternalError(const char* tag, const std::string& message);
+    void LogInfo(const char* tag, const std::string& message);
 
     // Prevent adding function if nothing was instrumented
     bool need_log_error_ = false;

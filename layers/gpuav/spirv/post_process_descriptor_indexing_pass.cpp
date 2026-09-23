@@ -22,7 +22,9 @@
 #include "type_manager.h"
 #include "utils/hash_util.h"
 
+#include <atomic>
 #include <iostream>
+#include <sstream>
 
 namespace gpuav {
 namespace spirv {
@@ -64,10 +66,25 @@ void PostProcessDescriptorIndexingPass::CreateFunctionCall(BasicBlock& block, In
                             {void_type, function_result, function_def, set_constant.Id(), binding_constant.Id(),
                              descriptor_index_id, binding_layout_offset.Id(), variable_id_constant.Id(), inst_position_id},
                             inst_it);
+
+    // DEBUG - Count every post processing instrumentation done, across all shaders
+    static std::atomic<uint32_t> instrumentation_counter{0};
+    const uint32_t count = ++instrumentation_counter;
+    std::ostringstream ss;
+    ss << "Post process instrumentation #" << count << ": unique_shader_id = " << module_.interface_.unique_shader_id
+       << ", instruction_position_offset = " << inst_position << ", set = " << interface.set << ", binding = " << interface.binding
+       << ", variable_id = " << meta.access_path->variable->Id() << ", binding_layout.start = " << binding_layout.start
+       << ", binding_layout.count = " << binding_layout.count;
+    module_.LogInfo("GPU-AV::PostProcessDescriptorIndexingPass", ss.str());
 }
 
 bool PostProcessDescriptorIndexingPass::RequiresInstrumentation(const Function& function, const Instruction& inst,
                                                                 InstructionMeta& meta) {
+    // DEBUG HACK - Only instrument this specific instruction
+    if (inst.GetPositionOffset() != 191754) {
+        return false;
+    }
+
     meta.access_path = module_.GetAccessPath(function, inst);
     if (!meta.access_path || !meta.access_path->IsValidDescriptor()) {
         return false;

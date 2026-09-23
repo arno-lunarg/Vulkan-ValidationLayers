@@ -50,7 +50,7 @@ struct BindingLayout {
     uint32_t count;
 };
 
-// Represented as a uvec2 in the shader
+// Represented as a uvec4 in the shader
 // For each descriptor index we have a "slot" to mark what happend on the GPU.
 struct PostProcessDescriptorIndexSlot {
     // see gpuav_shaders_constants.h for how we split this metadata up
@@ -60,6 +60,9 @@ struct PostProcessDescriptorIndexSlot {
     uint32_t variable_id;
     // Used in order to print out information about which instruction caused the issue
     uint32_t instruction_position_offset;
+    // Descriptor array index as computed by the shader.
+    // Should always match the slot position within the binding, stored for debugging purposes.
+    uint32_t descriptor_index;
 };
 
 struct DescriptorEncoding {

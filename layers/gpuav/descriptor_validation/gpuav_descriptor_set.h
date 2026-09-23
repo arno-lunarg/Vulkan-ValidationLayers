@@ -35,6 +35,7 @@ struct DescriptorAccess {
     uint32_t variable_id = vvl::kNoIndex32;                  // OpVariableID
     uint32_t instruction_position_offset = vvl::kNoIndex32;  // Instruction Position to map to source
     uint32_t error_logger_i = vvl::kNoIndex32;               // Index of error logger stored in command buffer state
+    uint32_t shader_descriptor_index = vvl::kNoIndex32;      // index into descriptor array, as written by the shader (debug)
 };
 
 class DescriptorSetSubState : public vvl::DescriptorSetSubState {

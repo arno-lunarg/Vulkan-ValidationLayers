@@ -17,6 +17,8 @@
  */
 
 #pragma once
+#include <functional>
+#include <string>
 #include <vulkan/vulkan.h>
 #include "error_message/error_location.h"
 
@@ -57,6 +59,10 @@ class DescriptorValidator : public Logger {
     void SetLocationForGpuAv(const Location& gpuav_loc);
     void SetOriginalSpirv(const std::vector<uint32_t>* spirv) { this->original_spirv = spirv; };
     void SetInstructionPositionOffset(uint32_t position_offset) { this->instruction_position_offset = position_offset; };
+    // Extra text appended to every error message (debugging aid)
+    void SetDebugInfoForGpuAv(std::string debug_info) { this->gpuav_debug_info = std::move(debug_info); }
+    // Called when an error message is being built (debugging aid)
+    void SetOnErrorForGpuAv(std::function<void()> on_error) { this->gpuav_on_error = std::move(on_error); }
 
   private:
     template <typename T>
@@ -113,6 +119,8 @@ class DescriptorValidator : public Logger {
 
     const std::vector<uint32_t>* original_spirv;
     uint32_t instruction_position_offset;
+    std::string gpuav_debug_info;
+    std::function<void()> gpuav_on_error;
 
     // For GPU-AV, these can become aliased and need to be mutable between descriptor accesses
     // A descriptor set might be used between multiple shaders and need to adjust which one was found

@@ -70,6 +70,9 @@ struct InstrumentedShader {
     std::vector<uint32_t> original_spirv;
 
     gpuav::spirv::InstrumentationStatus::Device status;
+
+    // Kept for debugging purposes, so it can be dumped when an error is found
+    std::vector<uint32_t> instrumented_spirv;
 };
 
 // Historically this was an common interface to both GPU-AV and DebugPrintf before the were merged together.
