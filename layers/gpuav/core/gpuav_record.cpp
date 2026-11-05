@@ -51,19 +51,21 @@ void Validator::OnDeviceLost(const Location& loc) {
 }
 
 void Validator::OnInternalDeviceLost(const Location& loc) {
-    const bool was_device_lost = is_device_lost;
+    const bool is_internal_device_lost = !is_device_lost;
 
-    // The chassis only sets is_device_lost for results it returns to the app. GPU-AV relies on it to stop issuing GPU work
+    // When getting here, a device lost could have been reported
+    // by an app issued command.
+    // => GPU-AV errors have already been reported, nothing to do
+    if (!is_internal_device_lost) {
+        return;
+    }
+
     for (auto& vo : dispatch_device_->object_dispatch) {
         vo->is_device_lost = true;
     }
 
-    // No GPU-AV work gets submitted after this, so a single report covers every command buffer
-    if (!was_device_lost) {
-        // The app might not get a VK_ERROR_DEVICE_LOST itself, so tell it where it came from
-        InternalWarning(device, loc, "VK_ERROR_DEVICE_LOST was returned to a command GPU-AV issued internally.");
-        ReportSubmittedCommandBufferErrorsNow();
-    }
+    InternalWarning(device, loc, "VK_ERROR_DEVICE_LOST was returned to a command GPU-AV issued internally.");
+    ReportSubmittedCommandBufferErrorsNow();
 }
 
 void Validator::PreCallRecordCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo,

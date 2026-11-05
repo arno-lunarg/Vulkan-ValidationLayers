@@ -199,6 +199,8 @@ void vvl::Queue::OnDeviceLost() {
     auto guard = Lock();
     std::vector<const QueueSubmission*> submissions;
     for (const QueueSubmission& submission : submissions_) {
+        // #ARNO_TODO I am not sure about this if, would rather have a clean way to not process "currently submitting" submissions
+
         // Skip the batches of the submit currently between PreSubmit and PostSubmit (first_seq_to_post_process_ is 0 otherwise).
         // GPU-AV gets here from inside its PostSubmit when an internal submit returns VK_ERROR_DEVICE_LOST. This thread then
         // holds a read lock on the command buffer being post-processed, and the sub-states' OnDeviceLost write-lock it.
