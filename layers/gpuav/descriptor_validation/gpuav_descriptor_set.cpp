@@ -72,7 +72,8 @@ void DescriptorSetSubState::CreateDescriptorEncodingBuffer() {
     VmaAllocationCreateInfo alloc_info{};
     alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
     alloc_info.preferredFlags = VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-    const VkResult result = descriptor_encodings_.Create(&buffer_info, &alloc_info);
+    // Deferred: called under state_lock_, see GetDescriptorEncodingsAddress
+    const VkResult result = descriptor_encodings_.Create(&buffer_info, &alloc_info, TeardownTiming::Deferred);
     if (result != VK_SUCCESS) {
         return;
     }
@@ -336,6 +337,9 @@ void DescriptorSetSubState::PerformPushDescriptorsUpdate(vvl::CommandBuffer& cb,
 }
 
 VkDeviceAddress DescriptorSetSubState::GetDescriptorEncodingsAddress(Validator& gpuav) {
+    // Errors raised under this lock use TeardownTiming::Deferred: a thread submitting a command buffer can be waiting on it
+    // while holding command buffer locks the queue threads need to retire. Called from command buffer sub-state callbacks
+    // and pre submission work, neither of which can tear down anyway
     std::lock_guard guard(state_lock_);
     const uint32_t current_version = current_version_.load();
 
@@ -360,7 +364,7 @@ VkDeviceAddress DescriptorSetSubState::GetDescriptorEncodingsAddress(Validator& 
     }
 
     // Flush the descriptor encodings before unmapping so that they are visible to the GPU
-    descriptor_encodings_.FlushAllocation();
+    descriptor_encodings_.FlushAllocation(0, VK_WHOLE_SIZE, TeardownTiming::Deferred);
 
     last_used_version_ = current_version;
 

@@ -29,6 +29,7 @@
 #include "utils/shader_utils.h"
 #include "utils/spirv_tools_utils.h"
 #include "utils/math_utils.h"
+#include "utils/text_utils.h"
 
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 #include "gpuav/shaders/gpuav_error_codes.h"
@@ -2073,7 +2074,8 @@ void GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t>& in
     out_status.host.is_instrumented = true;
 }
 
-void GpuShaderInstrumentor::InternalError(LogObjectList objlist, const Location& loc, const char* const specific_message) const {
+void GpuShaderInstrumentor::InternalError(LogObjectList objlist, const Location& loc, const char* const specific_message,
+                                          TeardownTiming teardown_timing) const {
     aborted_ = true;
     std::string error_message = specific_message;
 
@@ -2085,7 +2087,80 @@ void GpuShaderInstrumentor::InternalError(LogObjectList objlist, const Location&
     // Once we encounter an internal issue disconnect everything.
     // This prevents need to check "if (aborted)" (which is awful when we easily forget to check somewhere and the user gets spammed
     // with errors making it hard to see the first error with the real source of the problem).
+    Teardown(loc, teardown_timing);
+}
+
+static bool IsOnQueueThread(vvl::DeviceState& device_state) {
+    bool on_queue_thread = false;
+    device_state.ForEachShared<vvl::Queue>(
+        [&on_queue_thread](const std::shared_ptr<vvl::Queue>& queue) { on_queue_thread |= queue->IsQueueThread(); });
+    return on_queue_thread;
+}
+
+void GpuShaderInstrumentor::Teardown(const Location& loc, TeardownTiming teardown_timing) const {
+    if (teardown_timing == TeardownTiming::Immediate && IsOnQueueThread(*device_state)) {
+        // Waiting on the queues would wait on this thread, and releasing would destroy the sub-state that is retiring
+        assert(false && "An internal error raised while retiring must use TeardownTiming::Deferred");
+        teardown_timing = TeardownTiming::Deferred;
+    }
+    if (teardown_timing == TeardownTiming::Deferred) {
+        teardown_pending_ = true;
+        return;
+    }
+    if (teardown_started_.exchange(true)) {
+        return;
+    }
+
+    // Releasing removes the GPU-AV sub-states from every queue, after which nothing reads the errors of what is in flight
+    RetireAllQueues(loc);
+    released_ = true;
     dispatch_device_->ReleaseValidationObject(LayerObjectTypeGpuAssisted);
+}
+
+void GpuShaderInstrumentor::RunPendingTeardown(const Location& loc) const {
+    // Plain load first, this runs on every submission and wait
+    if (teardown_pending_.load() && teardown_pending_.exchange(false)) {
+        Teardown(loc, TeardownTiming::Immediate);
+    }
+}
+
+std::vector<std::pair<std::shared_ptr<vvl::Queue>, uint64_t>> GpuShaderInstrumentor::NotifyAllQueues() const {
+    std::vector<std::pair<std::shared_ptr<vvl::Queue>, uint64_t>> queues;
+    queues.reserve(device_state->Count<vvl::Queue>());
+    device_state->ForEachShared<vvl::Queue>([&queues](const std::shared_ptr<vvl::Queue>& queue) {
+        const uint64_t until_seq = queue->GetLastSubmittedSeq();
+        // #CLAUDE
+        // Retiring a batch that waits on a timeline value nothing signals yet blocks the queue thread on a signal that might
+        // never come
+        if (!queue->FindTimelineWaitWithoutResolvingSignal(until_seq)) {
+            queues.emplace_back(queue, until_seq);
+        }
+    });
+
+    // Same as DeviceWaitIdle: notify all queues before waiting on any, since retiring a submission on one queue can depend
+    // on a semaphore signal from another queue that was not notified yet
+    for (const auto& [queue, until_seq] : queues) {
+        queue->Notify(until_seq);
+    }
+    return queues;
+}
+
+void GpuShaderInstrumentor::RetireAllQueues(const Location& loc) const {
+    // Wait so errors are reported before returning to the app. Otherwise a following vkDestroyDevice can stop the queue
+    // threads before they retire anything, and the errors are lost
+    for (const auto& [queue, until_seq] : NotifyAllQueues()) {
+        queue->Wait(loc, until_seq);
+    }
+}
+
+bool GpuShaderInstrumentor::LogGpuError(const GpuError& gpu_error, std::string_view vuid_text, const LogObjectList& objlist,
+                                        const Location& loc, const char* format, ...) const {
+    std::string error_msg = gpu_error.error_msg_prefix ? gpu_error.error_msg_prefix : "";
+    va_list argptr;
+    va_start(argptr, format);
+    error_msg += text::VFormat(format, argptr);
+    va_end(argptr);
+    return debug_report->LogMessage(kErrorBit, vuid_text, objlist, loc, error_msg);
 }
 
 // Dedicated warning VUID that likely can be ignored.

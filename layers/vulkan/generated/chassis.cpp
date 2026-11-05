@@ -506,6 +506,9 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit(VkQueue queue, uint32_t submitCount, 
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -564,6 +567,9 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueWaitIdle(VkQueue queue) {
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -617,6 +623,9 @@ VKAPI_ATTR VkResult VKAPI_CALL DeviceWaitIdle(VkDevice device) {
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -1230,6 +1239,9 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueBindSparse(VkQueue queue, uint32_t bindInfoC
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -1422,6 +1434,9 @@ VKAPI_ATTR VkResult VKAPI_CALL GetFenceStatus(VkDevice device, VkFence fence) {
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -1476,6 +1491,9 @@ VKAPI_ATTR VkResult VKAPI_CALL WaitForFences(VkDevice device, uint32_t fenceCoun
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -1716,6 +1734,9 @@ VKAPI_ATTR VkResult VKAPI_CALL GetQueryPoolResults(VkDevice device, VkQueryPool 
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -3072,6 +3093,9 @@ VKAPI_ATTR VkResult VKAPI_CALL GetEventStatus(VkDevice device, VkEvent event) {
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -7015,6 +7039,9 @@ VKAPI_ATTR VkResult VKAPI_CALL GetSemaphoreCounterValue(VkDevice device, VkSemap
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -7068,6 +7095,9 @@ VKAPI_ATTR VkResult VKAPI_CALL WaitSemaphores(VkDevice device, const VkSemaphore
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -7875,6 +7905,9 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit2(VkQueue queue, uint32_t submitCount,
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -10350,6 +10383,9 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateSwapchainKHR(VkDevice device, const VkSwapc
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -10496,6 +10532,9 @@ VKAPI_ATTR VkResult VKAPI_CALL AcquireNextImageKHR(VkDevice device, VkSwapchainK
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -10693,6 +10732,9 @@ VKAPI_ATTR VkResult VKAPI_CALL AcquireNextImage2KHR(VkDevice device, const VkAcq
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -11073,6 +11115,9 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateSharedSwapchainsKHR(VkDevice device, uint32
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -13729,6 +13774,9 @@ VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainStatusKHR(VkDevice device, VkSwapchai
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -14980,6 +15028,9 @@ VKAPI_ATTR VkResult VKAPI_CALL GetSemaphoreCounterValueKHR(VkDevice device, VkSe
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -15033,6 +15084,9 @@ VKAPI_ATTR VkResult VKAPI_CALL WaitSemaphoresKHR(VkDevice device, const VkSemaph
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -15324,6 +15378,9 @@ VKAPI_ATTR VkResult VKAPI_CALL WaitForPresentKHR(VkDevice device, VkSwapchainKHR
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -16383,6 +16440,9 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit2KHR(VkQueue queue, uint32_t submitCou
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -18098,6 +18158,9 @@ VKAPI_ATTR VkResult VKAPI_CALL WaitForPresent2KHR(VkDevice device, VkSwapchainKH
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -21032,6 +21095,9 @@ VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainCounterEXT(VkDevice device, VkSwapcha
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -21086,6 +21152,9 @@ VKAPI_ATTR VkResult VKAPI_CALL GetRefreshCycleDurationGOOGLE(VkDevice device, Vk
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -21144,6 +21213,9 @@ VKAPI_ATTR VkResult VKAPI_CALL GetPastPresentationTimingGOOGLE(VkDevice device, 
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -25161,6 +25233,9 @@ GetPastPresentationTimingEXT(VkDevice device, const VkPastPresentationTimingInfo
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }
@@ -27689,6 +27764,9 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueSetPerfHintQCOM(VkQueue queue, const VkPerfH
 
         if (result == VK_ERROR_DEVICE_LOST) {
             for (auto& vo : device_dispatch->object_dispatch) {
+                if (!vo) {
+                    continue;
+                }
                 vo->is_device_lost = true;
             }
         }

@@ -170,6 +170,13 @@ class Queue : public StateObject, public SubStateManager<QueueSubState> {
     // Helper that combines Notify and Wait
     void NotifyAndWait(const Location &loc, uint64_t until_seq = kU64Max);
 
+    // Seq of the last submission PreSubmit added to the queue. Unlike kU64Max, it never covers a batch whose PreSubmit is
+    // still running on another thread, which Wait cannot find yet
+    uint64_t GetLastSubmittedSeq() const;
+
+    // Whether the caller runs on this queue's retirement thread, where waiting on this queue would wait on itself
+    bool IsQueueThread() const { return thread_id_.load() == std::this_thread::get_id(); }
+
     // Retire present semaphore waits on the calling thread.
     // Ask the queue thread to retire presentation resources (but not the
     // entire present batches) through until_seq and wait for completion.
@@ -251,6 +258,8 @@ class Queue : public StateObject, public SubStateManager<QueueSubState> {
     uint64_t request_seq_{0};
     uint64_t first_seq_to_post_process_{0};
     std::atomic<bool> exit_thread_{false};
+    // Readable without lock_, so IsQueueThread can be called with it held
+    std::atomic<std::thread::id> thread_id_{};
     // Keep the last removed submission waitable while its fence is retired outside lock_
     uint64_t last_removed_seq_{0};
     std::shared_future<void> last_removed_waiter_;

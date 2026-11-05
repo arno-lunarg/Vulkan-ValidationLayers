@@ -172,7 +172,7 @@ class BaseDevice : public Logger {
 
     const LayerObjectTypeId container_type;
 
-    bool is_device_lost = false;
+    std::atomic<bool> is_device_lost = false;
 
     mutable std::shared_mutex validation_object_mutex;
     // If the Record phase calls a function that blocks, we might need to release

@@ -73,7 +73,7 @@ class Validator : public GpuShaderInstrumentor {
     Validator(vvl::DispatchDevice* dev, Instance* instance_vo)
         : GpuShaderInstrumentor(dev, instance_vo, LayerObjectTypeGpuAssisted),
           global_indices_buffer_(*this),
-          gpu_resources_manager_(*this, true) {}
+          gpu_resources_manager_(*this, true, TeardownTiming::Immediate) {}
     ~Validator();
 
     // gpuav_setup.cpp
@@ -81,7 +81,8 @@ class Validator : public GpuShaderInstrumentor {
   public:
     void FinishDeviceSetup(const VkDeviceCreateInfo* pCreateInfo, const Location& loc) final;
 
-    void InternalVmaError(LogObjectList objlist, VkResult result, const char* const specific_message) const;
+    void InternalVmaError(LogObjectList objlist, VkResult result, const char* const specific_message,
+                          TeardownTiming teardown_timing = TeardownTiming::Immediate) const;
     bool IsAllDeviceLocalMappable() const;
 
   private:
@@ -91,6 +92,12 @@ class Validator : public GpuShaderInstrumentor {
     // gpuav_record.cpp
     // --------------
   public:
+    void OnDeviceLost(const Location& loc);
+    // For VK_ERROR_DEVICE_LOST returned to a call GPU-AV makes itself, loc being that call. GPU-AV cannot carry on, so it is
+    // an InternalError
+    void OnInternalDeviceLost(const Location& loc);
+    bool PreCallValidateDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator,
+                                      const ErrorObject& error_obj) const final;
     void PreCallRecordDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) final;
     void PreCallRecordCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator,
                                    VkBuffer* pBuffer, const RecordObject& record_obj, chassis::CreateBuffer& chassis_state) final;
@@ -254,8 +261,65 @@ class Validator : public GpuShaderInstrumentor {
     bool ValidateUnprotectedTensor(const vvl::CommandBuffer& cb_state, const vvl::Tensor& tensor_state, const Location& tensor_loc,
                                    const char* more_message = "") const final;
 
+    // All device commands that can return VK_ERROR_DEVICE_LOST, so the errors GPU-AV already gathered get reported before
+    // the app has a chance to destroy the device. Also where a teardown InternalError had to defer runs
+    void PostCallRecordAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageInfoKHR* pAcquireInfo, uint32_t* pImageIndex,
+                                            const RecordObject& record_obj) final;
+    void PostCallRecordAcquireNextImageKHR(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSemaphore semaphore,
+                                           VkFence fence, uint32_t* pImageIndex, const RecordObject& record_obj) final;
+    void PostCallRecordCreateSharedSwapchainsKHR(VkDevice device, uint32_t swapchainCount,
+                                                 const VkSwapchainCreateInfoKHR* pCreateInfos,
+                                                 const VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchains,
+                                                 const RecordObject& record_obj) final;
+    void PostCallRecordCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR* pCreateInfo,
+                                          const VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchain,
+                                          const RecordObject& record_obj) final;
+    void PostCallRecordDeviceWaitIdle(VkDevice device, const RecordObject& record_obj) final;
+    void PostCallRecordGetEventStatus(VkDevice device, VkEvent event, const RecordObject& record_obj) final;
+    void PostCallRecordGetFenceStatus(VkDevice device, VkFence fence, const RecordObject& record_obj) final;
+    void PostCallRecordGetPastPresentationTimingEXT(VkDevice device,
+                                                    const VkPastPresentationTimingInfoEXT* pPastPresentationTimingInfo,
+                                                    VkPastPresentationTimingPropertiesEXT* pPastPresentationTimingProperties,
+                                                    const RecordObject& record_obj) final;
+    void PostCallRecordGetPastPresentationTimingGOOGLE(VkDevice device, VkSwapchainKHR swapchain,
+                                                       uint32_t* pPresentationTimingCount,
+                                                       VkPastPresentationTimingGOOGLE* pPresentationTimings,
+                                                       const RecordObject& record_obj) final;
+    void PostCallRecordGetQueryPoolResults(VkDevice device, VkQueryPool queryPool, uint32_t firstQuery, uint32_t queryCount,
+                                           size_t dataSize, void* pData, VkDeviceSize stride, VkQueryResultFlags flags,
+                                           const RecordObject& record_obj) final;
+    void PostCallRecordGetRefreshCycleDurationGOOGLE(VkDevice device, VkSwapchainKHR swapchain,
+                                                     VkRefreshCycleDurationGOOGLE* pDisplayTimingProperties,
+                                                     const RecordObject& record_obj) final;
+    void PostCallRecordGetSemaphoreCounterValue(VkDevice device, VkSemaphore semaphore, uint64_t* pValue,
+                                                const RecordObject& record_obj) final;
+    void PostCallRecordGetSemaphoreCounterValueKHR(VkDevice device, VkSemaphore semaphore, uint64_t* pValue,
+                                                   const RecordObject& record_obj) final;
+    void PostCallRecordGetSwapchainCounterEXT(VkDevice device, VkSwapchainKHR swapchain, VkSurfaceCounterFlagBitsEXT counter,
+                                              uint64_t* pCounterValue, const RecordObject& record_obj) final;
+    void PostCallRecordGetSwapchainStatusKHR(VkDevice device, VkSwapchainKHR swapchain, const RecordObject& record_obj) final;
+    void PostCallRecordQueueBindSparse(VkQueue queue, uint32_t bindInfoCount, const VkBindSparseInfo* pBindInfo, VkFence fence,
+                                       const RecordObject& record_obj) final;
+    void PostCallRecordQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo, const RecordObject& record_obj) final;
+    void PostCallRecordQueueSetPerfHintQCOM(VkQueue queue, const VkPerfHintInfoQCOM* pPerfHintInfo,
+                                            const RecordObject& record_obj) final;
+    void PostCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence,
+                                   const RecordObject& record_obj) final;
+    void PostCallRecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
+                                    const RecordObject& record_obj) final;
+    void PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
+                                       const RecordObject& record_obj) final;
+    void PostCallRecordQueueWaitIdle(VkQueue queue, const RecordObject& record_obj) final;
     void PostCallRecordWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence* pFences, VkBool32 waitAll,
                                      uint64_t timeout, const RecordObject& record_obj) final;
+    void PostCallRecordWaitForPresent2KHR(VkDevice device, VkSwapchainKHR swapchain, const VkPresentWait2InfoKHR* pPresentWait2Info,
+                                          const RecordObject& record_obj) final;
+    void PostCallRecordWaitForPresentKHR(VkDevice device, VkSwapchainKHR swapchain, uint64_t presentId, uint64_t timeout,
+                                         const RecordObject& record_obj) final;
+    void PostCallRecordWaitSemaphores(VkDevice device, const VkSemaphoreWaitInfo* pWaitInfo, uint64_t timeout,
+                                      const RecordObject& record_obj) final;
+    void PostCallRecordWaitSemaphoresKHR(VkDevice device, const VkSemaphoreWaitInfo* pWaitInfo, uint64_t timeout,
+                                         const RecordObject& record_obj) final;
 
     void Created(vvl::DescriptorSet& set) final;
     void Created(vvl::CommandBuffer& cb_state) final;

@@ -21,6 +21,7 @@
 #include "state_tracker/shader_instruction.h"
 #include "state_tracker/state_tracker.h"
 #include "gpuav/spirv/interface.h"
+#include "gpuav/resources/gpuav_vulkan_objects.h"
 #include "containers/custom_containers.h"
 
 #include <vector>
@@ -71,6 +72,10 @@ struct InstrumentedShader {
     std::vector<uint32_t> original_spirv;
 
     gpuav::spirv::InstrumentationStatus::Device status;
+};
+
+struct GpuError {
+    const char* error_msg_prefix = nullptr;
 };
 
 // Historically this was an common interface to both GPU-AV and DebugPrintf before the were merged together.
@@ -166,10 +171,20 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
     void PreCallRecordDestroyPipeline(VkDevice device, VkPipeline pipeline, const VkAllocationCallbacks *pAllocator,
                                       const RecordObject &record_obj) override;
 
-    void InternalError(LogObjectList objlist, const Location &loc, const char *const specific_message) const;
+    void InternalError(LogObjectList objlist, const Location& loc, const char* const specific_message,
+                       TeardownTiming teardown_timing = TeardownTiming::Immediate) const;
+    // Retires what was submitted on every queue, so the errors GPU-AV gathered get reported, then disconnects GPU-AV
+    void Teardown(const Location& loc, TeardownTiming teardown_timing) const;
+    void RunPendingTeardown(const Location& loc) const;
+    // Notifies every queue up to the last batch already submitted to it, and returns those queues with that seq
+    std::vector<std::pair<std::shared_ptr<vvl::Queue>, uint64_t>> NotifyAllQueues() const;
+    void RetireAllQueues(const Location& loc) const;
     void InternalWarning(LogObjectList objlist, const Location &loc, const char *const specific_message) const;
     void AdjustmentWarning(LogObjectList objlist, const Location &loc, const char *const specific_message) const;
     void InternalInfo(LogObjectList objlist, const Location &loc, const char *const specific_message) const;
+
+    bool DECORATE_PRINTF(6, 7) LogGpuError(const GpuError& gpu_error, std::string_view vuid_text, const LogObjectList& objlist,
+                                           const Location& loc, const char* format, ...) const;
 
     bool IsSelectiveInstrumentationEnabled(const void *pNext);
 
@@ -226,6 +241,10 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
     // It should only be used after calls that might abort, not to be used for guarding a function (unless a case is found that make
     // sense too)
     mutable bool aborted_ = false;
+    mutable std::atomic<bool> teardown_pending_{false};
+    mutable std::atomic<bool> teardown_started_{false};
+    // GPU-AV was disconnected from the chassis, which also removed its sub-states. Can lag behind aborted_
+    mutable bool released_ = false;
 
     // Some errors/warnings only want to report once for the lifetime of the app
     bool reported_code_type_binary_ = false;

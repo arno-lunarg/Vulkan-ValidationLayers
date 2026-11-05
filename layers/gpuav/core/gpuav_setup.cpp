@@ -441,7 +441,8 @@ void Validator::InitSettings(const Location& loc) {
     gpuav_settings.TracyLogSettings();
 }
 
-void Validator::InternalVmaError(LogObjectList objlist, VkResult result, const char* const specific_message) const {
+void Validator::InternalVmaError(LogObjectList objlist, VkResult result, const char* const specific_message,
+                                 TeardownTiming teardown_timing) const {
     aborted_ = true;
     std::string error_message = specific_message;
 
@@ -460,7 +461,7 @@ void Validator::InternalVmaError(LogObjectList objlist, VkResult result, const c
     // Once we encounter an internal issue disconnect everything.
     // This prevents need to check "if (aborted)" (which is awful when we easily forget to check somewhere and the user gets spammed
     // with errors making it hard to see the first error with the real source of the problem).
-    dispatch_device_->ReleaseValidationObject(LayerObjectTypeGpuAssisted);
+    Teardown(Location(vvl::Func::Empty), teardown_timing);
 }
 
 // On machines where all memory types have both DEVICE_LOCAL and HOST_VISIBLE we need to let VMA know there will be host access,
@@ -485,7 +486,8 @@ bool Validator::IsAllDeviceLocalMappable() const {
 // resources we need to track. One issue is on vkDestroyDevice we need to teardown the GPU-AV class, then after we try and destroy
 // leaked state objects (ex. user forgot to call vkDestroySampler).
 void Validator::DestroySubstate() {
-    if (!dispatch_device_ || aborted_ || substates_destroyed_) {
+    // Once released, RemoveProxy already removed them. Aborted alone is not enough, the teardown might not have run
+    if (!dispatch_device_ || released_ || substates_destroyed_) {
         return;
     }
     substates_destroyed_ = true;

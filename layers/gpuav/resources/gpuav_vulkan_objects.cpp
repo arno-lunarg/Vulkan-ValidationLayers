@@ -145,25 +145,26 @@ void DescriptorSetManager::PutBackDescriptorSet(VkDescriptorPool desc_pool, VkDe
 
 void* Buffer::GetMappedPtr() const { return mapped_ptr; }
 
-void Buffer::FlushAllocation(VkDeviceSize offset, VkDeviceSize size) const {
+void Buffer::FlushAllocation(VkDeviceSize offset, VkDeviceSize size, TeardownTiming teardown_timing) const {
     VkResult result = vmaFlushAllocation(gpuav.vma_allocator_, allocation, offset, size);
     if (result != VK_SUCCESS) {
-        gpuav.InternalVmaError(gpuav.device, result, "Unable to flush device memory.");
+        gpuav.InternalVmaError(gpuav.device, result, "Unable to flush device memory.", teardown_timing);
     }
 }
 
-void Buffer::InvalidateAllocation(VkDeviceSize offset, VkDeviceSize size) const {
+void Buffer::InvalidateAllocation(VkDeviceSize offset, VkDeviceSize size, TeardownTiming teardown_timing) const {
     VkResult result = vmaInvalidateAllocation(gpuav.vma_allocator_, allocation, offset, size);
     if (result != VK_SUCCESS) {
-        gpuav.InternalVmaError(gpuav.device, result, "Unable to invalidate device memory.");
+        gpuav.InternalVmaError(gpuav.device, result, "Unable to invalidate device memory.", teardown_timing);
     }
 }
 
-VkResult Buffer::Create(const VkBufferCreateInfo* buffer_create_info, const VmaAllocationCreateInfo* allocation_create_info) {
+VkResult Buffer::Create(const VkBufferCreateInfo* buffer_create_info, const VmaAllocationCreateInfo* allocation_create_info,
+                        TeardownTiming teardown_timing) {
     VkResult result =
         vmaCreateBuffer(gpuav.vma_allocator_, buffer_create_info, allocation_create_info, &buffer, &allocation, nullptr);
     if (result != VK_SUCCESS) {
-        gpuav.InternalVmaError(gpuav.device, result, "Unable to allocate device memory for internal buffer.");
+        gpuav.InternalVmaError(gpuav.device, result, "Unable to allocate device memory for internal buffer.", teardown_timing);
         return result;
     }
     size = buffer_create_info->size;
@@ -172,7 +173,8 @@ VkResult Buffer::Create(const VkBufferCreateInfo* buffer_create_info, const VmaA
         // After creating the buffer, get the address right away
         device_address = gpuav.device_state->GetBufferDeviceAddressHelper(buffer, &gpuav.modified_extensions);
         if (device_address == 0) {
-            gpuav.InternalVmaError(gpuav.device, VK_ERROR_UNKNOWN, "Failed to get address with DispatchGetBufferDeviceAddress.");
+            gpuav.InternalVmaError(gpuav.device, VK_ERROR_UNKNOWN, "Failed to get address with DispatchGetBufferDeviceAddress.",
+                                   teardown_timing);
             return VK_ERROR_UNKNOWN;
         }
     }
@@ -183,7 +185,7 @@ VkResult Buffer::Create(const VkBufferCreateInfo* buffer_create_info, const VmaA
         result = vmaMapMemory(gpuav.vma_allocator_, allocation, &mapped_ptr);
         if (result != VK_SUCCESS) {
             mapped_ptr = nullptr;
-            gpuav.InternalVmaError(gpuav.device, result, "Unable to map device memory.");
+            gpuav.InternalVmaError(gpuav.device, result, "Unable to map device memory.", teardown_timing);
             return result;
         }
     }
@@ -269,8 +271,8 @@ void CmdSynchronizedCopyBufferRange(VkCommandBuffer cb, const vko::BufferRange& 
                                &barrier_read_before_write, 0, nullptr);
 }
 
-GpuResourcesManager::GpuResourcesManager(Validator& gpuav, bool thread_safe_buffer_caches)
-    : gpuav_(gpuav), buffer_caches_(thread_safe_buffer_caches) {
+GpuResourcesManager::GpuResourcesManager(Validator& gpuav, bool thread_safe_buffer_caches, TeardownTiming teardown_timing)
+    : gpuav_(gpuav), buffer_caches_(thread_safe_buffer_caches, teardown_timing) {
     const bool force_host_access = gpuav.IsAllDeviceLocalMappable();
 
     {
@@ -511,7 +513,7 @@ vko::BufferRange GpuResourcesManager::BufferCache::GetBufferRange(Validator& gpu
     VkBufferCreateInfo buffer_ci = vku::InitStructHelper();
     buffer_ci.size = std::max(min_buffer_block_byte_size, byte_size + std::max(alignment, buffer_address_alignment));
     buffer_ci.usage = buffer_usage_flags_;
-    const VkResult result = buffer.Create(&buffer_ci, &allocation_ci_);
+    const VkResult result = buffer.Create(&buffer_ci, &allocation_ci_, teardown_timing_);
     if (result != VK_SUCCESS) {
         return {};
     }
@@ -592,7 +594,8 @@ GpuResourcesManagerCache::~GpuResourcesManagerCache() {
 GpuResourcesManager* GpuResourcesManagerCache::Get() {
     std::lock_guard<std::mutex> guard(lock_);
     if (available_managers_.empty()) {
-        return managers_.emplace_back(std::make_unique<GpuResourcesManager>(gpuav_, false)).get();
+        // Per queue submission, so only used from the queue sub-state callbacks
+        return managers_.emplace_back(std::make_unique<GpuResourcesManager>(gpuav_, false, TeardownTiming::Deferred)).get();
     }
     GpuResourcesManager* manager = available_managers_.back();
     available_managers_.pop_back();
@@ -703,7 +706,7 @@ CommandPool::CommandPool(Validator& gpuav, uint32_t queue_family_i, const Locati
     cmd_pool_ci.queueFamilyIndex = queue_family_i;
     VkResult result = DispatchCreateCommandPool(gpuav_.device, &cmd_pool_ci, nullptr, &cmd_pool_);
     if (result != VK_SUCCESS) {
-        gpuav_.InternalError(LogObjectList(), loc, "Failed to create command buffer pool");
+        gpuav_.InternalError(LogObjectList(), loc, "Failed to create command buffer pool", TeardownTiming::Deferred);
     }
 
     VkCommandBufferAllocateInfo cmd_buf_ai = vku::InitStructHelper();
@@ -714,7 +717,7 @@ CommandPool::CommandPool(Validator& gpuav, uint32_t queue_family_i, const Locati
     cmd_buffers_.resize(cmd_buf_ai.commandBufferCount);
     result = DispatchAllocateCommandBuffers(gpuav_.device, &cmd_buf_ai, cmd_buffers_.data());
     if (result != VK_SUCCESS) {
-        gpuav_.InternalError(LogObjectList(), loc, "Failed to create command buffers");
+        gpuav_.InternalError(LogObjectList(), loc, "Failed to create command buffers", TeardownTiming::Deferred);
     }
 
     for (VkCommandBuffer cb : cmd_buffers_) {
@@ -727,7 +730,7 @@ CommandPool::CommandPool(Validator& gpuav, uint32_t queue_family_i, const Locati
         fence_ci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
         result = DispatchCreateFence(gpuav_.device, &fence_ci, nullptr, &fence);
         if (result != VK_SUCCESS) {
-            gpuav_.InternalError(LogObjectList(), loc, "Failed to create fences");
+            gpuav_.InternalError(LogObjectList(), loc, "Failed to create fences", TeardownTiming::Deferred);
         }
     }
 }
@@ -744,8 +747,11 @@ std::pair<VkCommandBuffer, VkFence> CommandPool::GetCommandBuffer() {
     const size_t cb_i = cmd_buffer_ring_head_++ % cmd_buffers_.size();
 
     VkResult result = DispatchWaitForFences(gpuav_.device, 1, &fences_[cb_i], VK_TRUE, UINT64_MAX);
-    if (result != VK_SUCCESS) {
-        gpuav_.InternalError(fences_[cb_i], Location(vvl::Func::Empty), "Failed to wait for fence");
+    if (result == VK_ERROR_DEVICE_LOST) {
+        gpuav_.OnInternalDeviceLost(Location(vvl::Func::vkWaitForFences));
+        return {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    } else if (result != VK_SUCCESS) {
+        gpuav_.InternalError(fences_[cb_i], Location(vvl::Func::Empty), "Failed to wait for fence", TeardownTiming::Deferred);
         return {VK_NULL_HANDLE, VK_NULL_HANDLE};
     }
 

@@ -40,6 +40,29 @@
 
 namespace gpuav {
 
+void Validator::OnDeviceLost(const Location& loc) {
+    assert(is_device_lost);
+    RetireAllQueues(loc);
+
+    // #ARNO_TODO I need to look at C++ future
+
+    // #ARNO_TODO Realising that any valuable submit info could be added to GPU-AV messages, dunno like corresponding fences or
+    // something
+}
+
+void Validator::OnInternalDeviceLost(const Location& loc) {
+    // The chassis only sets is_device_lost for results it returns to the app. Retiring relies on it to not wait on the GPU
+    for (auto& vo : dispatch_device_->object_dispatch) {
+        // Null once released
+        if (vo) {
+            vo->is_device_lost = true;
+        }
+    }
+    // Only called from the queue sub-state callbacks
+    InternalError(device, loc, "VK_ERROR_DEVICE_LOST was returned to a command GPU-AV issued internally.",
+                  TeardownTiming::Deferred);
+}
+
 void Validator::PreCallRecordCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo,
                                           const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer,
                                           const RecordObject& record_obj, chassis::CreateBuffer& chassis_state) {
@@ -278,6 +301,17 @@ void Instance::PostCallRecordGetPhysicalDeviceProperties2(VkPhysicalDevice physi
     }
 
     ReserveBindingSlot(physicalDevice, device_props2->properties.limits, record_obj.location);
+}
+
+bool Validator::PreCallValidateDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator,
+                                             const ErrorObject& error_obj) const {
+    // Not a validation, but the last point where the queues are still alive: the state tracker destroys them in its
+    // PreCallRecordDestroyDevice, which runs before GPU-AV's. Too late to release GPU-AV, but what is in flight can still
+    // be reported
+    if (teardown_pending_.exchange(false)) {
+        RetireAllQueues(error_obj.location);
+    }
+    return false;
 }
 
 // Clean up device-related resources
@@ -1043,40 +1077,224 @@ bool Validator::ValidateUnprotectedTensor(const vvl::CommandBuffer& cb_state, co
     return skip;
 }
 
+void Validator::PostCallRecordAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageInfoKHR* pAcquireInfo,
+                                                   uint32_t* pImageIndex, const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordAcquireNextImageKHR(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
+                                                  VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex,
+                                                  const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordCreateSharedSwapchainsKHR(VkDevice device, uint32_t swapchainCount,
+                                                        const VkSwapchainCreateInfoKHR* pCreateInfos,
+                                                        const VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchains,
+                                                        const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR* pCreateInfo,
+                                                 const VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchain,
+                                                 const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordDeviceWaitIdle(VkDevice device, const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetEventStatus(VkDevice device, VkEvent event, const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetFenceStatus(VkDevice device, VkFence fence, const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetPastPresentationTimingEXT(VkDevice device,
+                                                           const VkPastPresentationTimingInfoEXT* pPastPresentationTimingInfo,
+                                                           VkPastPresentationTimingPropertiesEXT* pPastPresentationTimingProperties,
+                                                           const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetPastPresentationTimingGOOGLE(VkDevice device, VkSwapchainKHR swapchain,
+                                                              uint32_t* pPresentationTimingCount,
+                                                              VkPastPresentationTimingGOOGLE* pPresentationTimings,
+                                                              const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetQueryPoolResults(VkDevice device, VkQueryPool queryPool, uint32_t firstQuery, uint32_t queryCount,
+                                                  size_t dataSize, void* pData, VkDeviceSize stride, VkQueryResultFlags flags,
+                                                  const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetRefreshCycleDurationGOOGLE(VkDevice device, VkSwapchainKHR swapchain,
+                                                            VkRefreshCycleDurationGOOGLE* pDisplayTimingProperties,
+                                                            const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetSemaphoreCounterValue(VkDevice device, VkSemaphore semaphore, uint64_t* pValue,
+                                                       const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetSemaphoreCounterValueKHR(VkDevice device, VkSemaphore semaphore, uint64_t* pValue,
+                                                          const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetSwapchainCounterEXT(VkDevice device, VkSwapchainKHR swapchain, VkSurfaceCounterFlagBitsEXT counter,
+                                                     uint64_t* pCounterValue, const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetSwapchainStatusKHR(VkDevice device, VkSwapchainKHR swapchain, const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordQueueBindSparse(VkQueue queue, uint32_t bindInfoCount, const VkBindSparseInfo* pBindInfo,
+                                              VkFence fence, const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo, const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordQueueSetPerfHintQCOM(VkQueue queue, const VkPerfHintInfoQCOM* pPerfHintInfo,
+                                                   const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence,
+                                          const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
+                                           const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
+                                              const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordQueueWaitIdle(VkQueue queue, const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
 void Validator::PostCallRecordWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence* pFences, VkBool32 waitAll,
                                             uint64_t timeout, const RecordObject& record_obj) {
-    if (record_obj.result != VK_ERROR_DEVICE_LOST) {
-        return;
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
     }
+}
 
-    assert(is_device_lost);
-
-    if (is_device_lost) {
-        LogWarning("TODO-find-warning-name", LogObjectList(), record_obj.location,
-                   "A device lost occured. Trying to print errors GPU-AV might have gathered. Since GPU buffers storing GPU-AV "
-                   "errors are in theory undefined in this context, error messages may be inacurrate or wrongly report an "
-                   "unexisting error. In practice, memory tends to hold up, and reads are fine.");
+void Validator::PostCallRecordWaitForPresent2KHR(VkDevice device, VkSwapchainKHR swapchain,
+                                                 const VkPresentWait2InfoKHR* pPresentWait2Info, const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
     }
+}
 
-    std::vector<std::shared_ptr<vvl::Queue>> queues;
-    queues.reserve(device_state->Count<vvl::Queue>());
-    device_state->ForEachShared<vvl::Queue>([&queues](const std::shared_ptr<vvl::Queue>& queue) { queues.emplace_back(queue); });
-
-    // Same as DeviceWaitIdle: notify all queues before waiting on any, since retiring a submission on one queue can depend
-    // on a semaphore signal from another queue that was not notified yet
-    for (const auto& queue : queues) {
-        queue->Notify(vvl::kU64Max);
+void Validator::PostCallRecordWaitForPresentKHR(VkDevice device, VkSwapchainKHR swapchain, uint64_t presentId, uint64_t timeout,
+                                                const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
     }
-    // Wait so errors are reported before returning to the app. Otherwise a following vkDestroyDevice can stop the queue
-    // threads before they retire anything, and the errors are lost
-    for (const auto& queue : queues) {
-        queue->Wait(record_obj.location);
+}
+
+void Validator::PostCallRecordWaitSemaphores(VkDevice device, const VkSemaphoreWaitInfo* pWaitInfo, uint64_t timeout,
+                                             const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
     }
+}
 
-    // #ARNO_TODO I need to look at C++ future
-
-    // #ARNO_TODO Realising that any valuable submit info could be added to GPU-AV messages, dunno like corresponding fences or
-    // something
+void Validator::PostCallRecordWaitSemaphoresKHR(VkDevice device, const VkSemaphoreWaitInfo* pWaitInfo, uint64_t timeout,
+                                                const RecordObject& record_obj) {
+    RunPendingTeardown(record_obj.location);
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
 }
 
 }  // namespace gpuav

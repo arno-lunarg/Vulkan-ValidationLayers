@@ -256,14 +256,14 @@ void FirstInstance(Validator& gpuav, CommandBufferSubState& cb_state, const Loca
         const uint32_t index = context.error_record[kValCmd_ErrorPayloadDword_0];
         const uint32_t invalid_first_instance = context.error_record[kValCmd_ErrorPayloadDword_1];
 
-        skip |= gpuav.LogError(vuid, context.objlist, context.loc_with_debug_region,
-                               "The firstInstance member of the %s structure at "
-                               "index %" PRIu32 " is %" PRIu32 ".%s",
-                               vvl::String(api_struct_name), index, invalid_first_instance,
-                               gpuav.enabled_features.drawIndirectFirstInstance
-                                   ? ""
-                                   : "\nHint: firstInstance must be zero because the drawIndirectFirstInstance feature was not "
-                                     "enabled.");
+        skip |= gpuav.LogGpuError(context.gpu_error, vuid, context.objlist, context.loc_with_debug_region,
+                                  "The firstInstance member of the %s structure at "
+                                  "index %" PRIu32 " is %" PRIu32 ".%s",
+                                  vvl::String(api_struct_name), index, invalid_first_instance,
+                                  gpuav.enabled_features.drawIndirectFirstInstance
+                                      ? ""
+                                      : "\nHint: firstInstance must be zero because the drawIndirectFirstInstance feature was not "
+                                        "enabled.");
 
         return skip;
     };
@@ -473,9 +473,10 @@ void CountBuffer(Validator& gpuav, CommandBufferSubState& cb_state, const Locati
             }
             case kErrorSubCode_PreDraw_DrawCountLimit: {
                 const uint32_t count = context.error_record[kValCmd_ErrorPayloadDword_0];
-                skip |= gpuav.LogError(vuid, context.objlist, context.loc_with_debug_region,
-                                       "Indirect draw count of %" PRIu32 " would exceed maxDrawIndirectCount limit of %" PRIu32 ".",
-                                       count, gpuav.phys_dev_props.limits.maxDrawIndirectCount);
+                skip |=
+                    gpuav.LogGpuError(context.gpu_error, vuid, context.objlist, context.loc_with_debug_region,
+                                      "Indirect draw count of %" PRIu32 " would exceed maxDrawIndirectCount limit of %" PRIu32 ".",
+                                      count, gpuav.phys_dev_props.limits.maxDrawIndirectCount);
                 break;
             }
             default:
@@ -666,11 +667,11 @@ void DrawMeshIndirect(Validator& gpuav, CommandBufferSubState& cb_state, const L
                 const uint32_t group_count_x = context.error_record[kValCmd_ErrorPayloadDword_0];
                 const uint32_t limit = is_task_shader ? gpuav.phys_dev_ext_props.mesh_shader_props_ext.maxTaskWorkGroupCount[0]
                                                       : gpuav.phys_dev_ext_props.mesh_shader_props_ext.maxMeshWorkGroupCount[0];
-                skip |= gpuav.LogError(vuid, context.objlist, context.loc_with_debug_region,
-                                       "In draw %" PRIu32 ", VkDrawMeshTasksIndirectCommandEXT::groupCountX is %" PRIu32
-                                       " which is greater than VkPhysicalDeviceMeshShaderPropertiesEXT::%s[0]"
-                                       " (%" PRIu32 ").",
-                                       draw_i, group_count_x, group_count_name, limit);
+                skip |= gpuav.LogGpuError(context.gpu_error, vuid, context.objlist, context.loc_with_debug_region,
+                                          "In draw %" PRIu32 ", VkDrawMeshTasksIndirectCommandEXT::groupCountX is %" PRIu32
+                                          " which is greater than VkPhysicalDeviceMeshShaderPropertiesEXT::%s[0]"
+                                          " (%" PRIu32 ").",
+                                          draw_i, group_count_x, group_count_name, limit);
                 break;
             }
 
@@ -680,11 +681,11 @@ void DrawMeshIndirect(Validator& gpuav, CommandBufferSubState& cb_state, const L
                 const uint32_t group_count_y = context.error_record[kValCmd_ErrorPayloadDword_0];
                 const uint32_t limit = is_task_shader ? gpuav.phys_dev_ext_props.mesh_shader_props_ext.maxTaskWorkGroupCount[1]
                                                       : gpuav.phys_dev_ext_props.mesh_shader_props_ext.maxMeshWorkGroupCount[1];
-                skip |= gpuav.LogError(vuid, context.objlist, context.loc_with_debug_region,
-                                       "In draw %" PRIu32 ", VkDrawMeshTasksIndirectCommandEXT::groupCountY is %" PRIu32
-                                       " which is greater than VkPhysicalDeviceMeshShaderPropertiesEXT::%s[1]"
-                                       " (%" PRIu32 ").",
-                                       draw_i, group_count_y, group_count_name, limit);
+                skip |= gpuav.LogGpuError(context.gpu_error, vuid, context.objlist, context.loc_with_debug_region,
+                                          "In draw %" PRIu32 ", VkDrawMeshTasksIndirectCommandEXT::groupCountY is %" PRIu32
+                                          " which is greater than VkPhysicalDeviceMeshShaderPropertiesEXT::%s[1]"
+                                          " (%" PRIu32 ").",
+                                          draw_i, group_count_y, group_count_name, limit);
                 break;
             }
 
@@ -694,11 +695,11 @@ void DrawMeshIndirect(Validator& gpuav, CommandBufferSubState& cb_state, const L
                 const uint32_t group_count_z = context.error_record[kValCmd_ErrorPayloadDword_0];
                 const uint32_t limit = is_task_shader ? gpuav.phys_dev_ext_props.mesh_shader_props_ext.maxTaskWorkGroupCount[2]
                                                       : gpuav.phys_dev_ext_props.mesh_shader_props_ext.maxMeshWorkGroupCount[2];
-                skip |= gpuav.LogError(vuid, context.objlist, context.loc_with_debug_region,
-                                       "In draw %" PRIu32 ", VkDrawMeshTasksIndirectCommandEXT::groupCountZ is %" PRIu32
-                                       " which is greater than VkPhysicalDeviceMeshShaderPropertiesEXT::%s[2]"
-                                       " (%" PRIu32 ").",
-                                       draw_i, group_count_z, group_count_name, limit);
+                skip |= gpuav.LogGpuError(context.gpu_error, vuid, context.objlist, context.loc_with_debug_region,
+                                          "In draw %" PRIu32 ", VkDrawMeshTasksIndirectCommandEXT::groupCountZ is %" PRIu32
+                                          " which is greater than VkPhysicalDeviceMeshShaderPropertiesEXT::%s[2]"
+                                          " (%" PRIu32 ").",
+                                          draw_i, group_count_z, group_count_name, limit);
                 break;
             }
 
@@ -708,11 +709,11 @@ void DrawMeshIndirect(Validator& gpuav, CommandBufferSubState& cb_state, const L
                 const uint32_t group_count_total = context.error_record[kValCmd_ErrorPayloadDword_0];
                 const uint32_t limit = is_task_shader ? gpuav.phys_dev_ext_props.mesh_shader_props_ext.maxTaskWorkGroupTotalCount
                                                       : gpuav.phys_dev_ext_props.mesh_shader_props_ext.maxMeshWorkGroupTotalCount;
-                skip |= gpuav.LogError(vuid, context.objlist, context.loc_with_debug_region,
-                                       "In draw %" PRIu32 ", size of VkDrawMeshTasksIndirectCommandEXT is %" PRIu32
-                                       " which is greater than VkPhysicalDeviceMeshShaderPropertiesEXT::%s"
-                                       " (%" PRIu32 ").",
-                                       draw_i, group_count_total, group_count_total_name, limit);
+                skip |= gpuav.LogGpuError(context.gpu_error, vuid, context.objlist, context.loc_with_debug_region,
+                                          "In draw %" PRIu32 ", size of VkDrawMeshTasksIndirectCommandEXT is %" PRIu32
+                                          " which is greater than VkPhysicalDeviceMeshShaderPropertiesEXT::%s"
+                                          " (%" PRIu32 ").",
+                                          draw_i, group_count_total, group_count_total_name, limit);
                 break;
             }
 
@@ -1004,8 +1005,10 @@ void DrawIndexedIndirectIndexBuffer(Validator& gpuav, CommandBufferSubState& cb_
                 if (context.loc_with_debug_region.function == vvl::Func::vkCmdDrawIndexedIndirect2KHR) {
                     auto draw_buffer_state = gpuav.Get<vvl::Buffer>(api_buffer);
                     if (!draw_buffer_state) {
+                        // Error loggers run when retiring, in a queue sub-state callback
                         gpuav.InternalError(api_buffer, context.loc_with_debug_region,
-                                            "Could not retrieve buffer state during error logging - most likely a GPU-AV bug.");
+                                            "Could not retrieve buffer state during error logging - most likely a GPU-AV bug.",
+                                            TeardownTiming::Deferred);
                         return skip;
                     }
 
@@ -1017,25 +1020,26 @@ void DrawIndexedIndirectIndexBuffer(Validator& gpuav, CommandBufferSubState& cb_
                 }
                 indirect_buffer_info << "- Stride: " << api_stride << '\n';
 
-                skip |= gpuav.LogError(vuid, context.objlist, context.loc_with_debug_region,
-                                       "Index %" PRIu32
-                                       " is not within the bound index buffer. Computed from VkDrawIndexedIndirectCommand[%" PRIu32
-                                       "] (.firstIndex = %" PRIu32 ", .indexCount = %" PRIu32
-                                       ")\n"
+                skip |=
+                    gpuav.LogGpuError(context.gpu_error, vuid, context.objlist, context.loc_with_debug_region,
+                                      "Index %" PRIu32
+                                      " is not within the bound index buffer. Computed from "
+                                      "VkDrawIndexedIndirectCommand[%" PRIu32 "] (.firstIndex = %" PRIu32 ", .indexCount = %" PRIu32
+                                      ")\n"
 
-                                       "%s\n"
+                                      "%s\n"
 
-                                       "%s\n"
-                                       "Hint: This can be allowed if the robustBufferAccess2 feature is enabled.",
+                                      "%s\n"
+                                      "Hint: This can be allowed if the robustBufferAccess2 feature is enabled.",
 
-                                       // OOB index info
-                                       highest_accessed_index, draw_i, first_index, index_count,
+                                      // OOB index info
+                                      highest_accessed_index, draw_i, first_index, index_count,
 
-                                       // Draw parameters buffer
-                                       indirect_buffer_info.str().c_str(),
+                                      // Draw parameters buffer
+                                      indirect_buffer_info.str().c_str(),
 
-                                       // Index buffer binding info
-                                       index_buffer_binding.String(*gpuav.device_state).c_str());
+                                      // Index buffer binding info
+                                      index_buffer_binding.String(*gpuav.device_state).c_str());
                 break;
             }
 

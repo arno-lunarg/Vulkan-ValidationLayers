@@ -59,6 +59,7 @@ namespace gpuav {
 class Validator;
 class QueueSubState;
 struct InstrumentedShader;
+struct GpuError;
 
 // Unify data needed Classic/Buffer/Heap descriptor mode for on_instrumention callbacks
 struct CommonDescriptorUpdate {
@@ -122,8 +123,8 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     CommandBufferSubState(Validator &gpuav, vvl::CommandBuffer &cb);
     ~CommandBufferSubState();
 
-    [[nodiscard]] bool PreSubmit(QueueSubState& queue, const Location& loc, gpuav::QueueSubmission& queue_submission,
-                                 gpuav::CommandBufferSubmitInfo& cb_submit_info);
+    void PreSubmit(QueueSubState& queue, const Location& loc, gpuav::QueueSubmission& queue_submission,
+                   gpuav::CommandBufferSubmitInfo& cb_submit_info);
     [[nodiscard]] bool PostSubmit(QueueSubState& queue, const Location& loc, gpuav::QueueSubmission& queue_submission,
                                   gpuav::CommandBufferSubmitInfo& cb_submit_info);
     void OnCompletion(VkQueue queue, gpuav::QueueSubmission& queue_submission, gpuav::CommandBufferSubmitInfo& cb_submit_info,
@@ -171,7 +172,7 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
         const uint32_t* error_record;
         const Location& loc_with_debug_region;
         const LogObjectList& objlist;
-        const char* error_msg_prefix;
+        const GpuError& gpu_error;
     };
     // Using stdext::inplace_function over std::function to allocate memory in place
     using ErrorLoggerFunc =
@@ -285,8 +286,12 @@ class QueueSubState : public vvl::QueueSubState {
 
   protected:
     void SubmitBarrier(const Location &loc, uint64_t seq);
+    // After an internal error or a device lost, GPU-AV only reads back the errors of what is already in flight
+    bool StopSubmitting() const;
 
     Validator &gpuav_;
+    // Retire only waits for a barrier that was submitted
+    std::atomic<uint64_t> last_barrier_seq_{0};
     VkCommandPool barrier_command_pool_{VK_NULL_HANDLE};
     VkCommandBuffer barrier_command_buffer_{VK_NULL_HANDLE};
     std::vector<std::vector<vvl::CommandBufferSubmitInfo>> retiring_;

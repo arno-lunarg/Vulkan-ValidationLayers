@@ -116,26 +116,29 @@ void DispatchIndirect(Validator& gpuav, const Location& loc, CommandBufferSubSta
         switch (error_sub_code) {
             case kErrorSubCode_PreDispatch_CountLimitX: {
                 uint32_t count = context.error_record[kValCmd_ErrorPayloadDword_0];
-                skip |= gpuav.LogError("VUID-VkDispatchIndirectCommand-x-00417", context.objlist, context.loc_with_debug_region,
-                                       "Indirect dispatch VkDispatchIndirectCommand::x of %" PRIu32
-                                       " would exceed maxComputeWorkGroupCount[0] limit of %" PRIu32 ".",
-                                       count, gpuav.phys_dev_props.limits.maxComputeWorkGroupCount[0]);
+                skip |= gpuav.LogGpuError(context.gpu_error, "VUID-VkDispatchIndirectCommand-x-00417", context.objlist,
+                                          context.loc_with_debug_region,
+                                          "Indirect dispatch VkDispatchIndirectCommand::x of %" PRIu32
+                                          " would exceed maxComputeWorkGroupCount[0] limit of %" PRIu32 ".",
+                                          count, gpuav.phys_dev_props.limits.maxComputeWorkGroupCount[0]);
                 break;
             }
             case kErrorSubCode_PreDispatch_CountLimitY: {
                 uint32_t count = context.error_record[kValCmd_ErrorPayloadDword_0];
-                skip |= gpuav.LogError("VUID-VkDispatchIndirectCommand-y-00418", context.objlist, context.loc_with_debug_region,
-                                       "Indirect dispatch VkDispatchIndirectCommand::y of %" PRIu32
-                                       " would exceed maxComputeWorkGroupCount[1] limit of %" PRIu32 ".",
-                                       count, gpuav.phys_dev_props.limits.maxComputeWorkGroupCount[1]);
+                skip |= gpuav.LogGpuError(context.gpu_error, "VUID-VkDispatchIndirectCommand-y-00418", context.objlist,
+                                          context.loc_with_debug_region,
+                                          "Indirect dispatch VkDispatchIndirectCommand::y of %" PRIu32
+                                          " would exceed maxComputeWorkGroupCount[1] limit of %" PRIu32 ".",
+                                          count, gpuav.phys_dev_props.limits.maxComputeWorkGroupCount[1]);
                 break;
             }
             case kErrorSubCode_PreDispatch_CountLimitZ: {
                 uint32_t count = context.error_record[kValCmd_ErrorPayloadDword_0];
-                skip |= gpuav.LogError("VUID-VkDispatchIndirectCommand-z-00419", context.objlist, context.loc_with_debug_region,
-                                       "Indirect dispatch VkDispatchIndirectCommand::z of %" PRIu32
-                                       " would exceed maxComputeWorkGroupCount[2] limit of %" PRIu32 ".",
-                                       count, gpuav.phys_dev_props.limits.maxComputeWorkGroupCount[2]);
+                skip |= gpuav.LogGpuError(context.gpu_error, "VUID-VkDispatchIndirectCommand-z-00419", context.objlist,
+                                          context.loc_with_debug_region,
+                                          "Indirect dispatch VkDispatchIndirectCommand::z of %" PRIu32
+                                          " would exceed maxComputeWorkGroupCount[2] limit of %" PRIu32 ".",
+                                          count, gpuav.phys_dev_props.limits.maxComputeWorkGroupCount[2]);
                 break;
             }
             default:

@@ -125,6 +125,8 @@ uint64_t Queue::PreSubmit(std::vector<vvl::QueueSubmission>&& submissions) {
                             std::make_move_iterator(submissions.end()));
         if (!thread_) {
             thread_ = std::make_unique<std::thread>(&Queue::ThreadFunc, this);
+            // Set before lock_ is released, so before the thread can retire anything
+            thread_id_ = thread_->get_id();
         }
     }
     return last_batch_seq;
@@ -195,6 +197,11 @@ void Queue::Wait(const Location& loc, uint64_t until_seq) {
 void Queue::NotifyAndWait(const Location& loc, uint64_t until_seq) {
     Notify(until_seq);
     Wait(loc, until_seq);
+}
+
+uint64_t Queue::GetLastSubmittedSeq() const {
+    auto guard = Lock();
+    return submissions_.empty() ? last_removed_seq_ : submissions_.back().seq;
 }
 
 void Queue::NotifyAndWaitForPresent(const Location& loc, uint64_t until_seq) {

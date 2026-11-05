@@ -446,10 +446,14 @@ class LayerChassisOutputGenerator(BaseGenerator):
 
             # Because each intercept is a copy of vvl::BaseDevice, we need to update it for each,
             # even if they don't intercept this command.
+            # A released validation object (ex. GPU-AV after an internal error) leaves a null entry behind.
             if not command.instance and command.errorCodes and 'VK_ERROR_DEVICE_LOST' in command.errorCodes:
                 out.append(f'''
                     if (result == VK_ERROR_DEVICE_LOST) {{
                        for (auto& vo : {dispatch}->object_dispatch) {{
+                            if (!vo) {{
+                                continue;
+                            }}
                             vo->is_device_lost = true;
                         }}
                     }}

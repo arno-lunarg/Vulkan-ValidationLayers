@@ -32,6 +32,16 @@ struct Location;
 namespace gpuav {
 class Validator;
 
+// When an internal error disconnects GPU-AV. Before that, it retires what was submitted on every queue, so the errors GPU-AV
+// gathered still get reported.
+// Code running inside a vvl::Queue sub-state callback (PreSubmit, PostSubmit, Retire) holds the queue lock or is on the queue
+// thread: it can neither wait on the queues nor release GPU-AV, which would destroy the running sub-state. It has to use
+// Deferred, the teardown then runs in the next GPU-AV queue submission or wait.
+// Same for code holding a lock that a thread in PreSubmit can wait on, since that thread holds command buffer locks the queue
+// threads need to retire.
+// Immediate on a queue thread asserts, and falls back to Deferred. Immediate in PreSubmit or PostSubmit is not detected.
+enum class TeardownTiming { Immediate, Deferred };
+
 namespace vko {
 
 class DescriptorSetManager {
@@ -63,11 +73,14 @@ class Buffer {
     // No error propagation, but if hitting a VMA error, GPU-AV is likely not going to recover anyway.
 
     [[nodiscard]] void *GetMappedPtr() const;
-    void FlushAllocation(VkDeviceSize offset = 0, VkDeviceSize size = VK_WHOLE_SIZE) const;
-    void InvalidateAllocation(VkDeviceSize offset = 0, VkDeviceSize size = VK_WHOLE_SIZE) const;
+    void FlushAllocation(VkDeviceSize offset = 0, VkDeviceSize size = VK_WHOLE_SIZE,
+                         TeardownTiming teardown_timing = TeardownTiming::Immediate) const;
+    void InvalidateAllocation(VkDeviceSize offset = 0, VkDeviceSize size = VK_WHOLE_SIZE,
+                              TeardownTiming teardown_timing = TeardownTiming::Immediate) const;
 
     [[nodiscard]] VkResult Create(const VkBufferCreateInfo* buffer_create_info,
-                                  const VmaAllocationCreateInfo* allocation_create_info);
+                                  const VmaAllocationCreateInfo* allocation_create_info,
+                                  TeardownTiming teardown_timing = TeardownTiming::Immediate);
     void Destroy();
 
     bool IsDestroyed() const { return buffer == VK_NULL_HANDLE; }
@@ -105,7 +118,8 @@ void CmdSynchronizedCopyBufferRange(VkCommandBuffer cb, const vko::BufferRange& 
 // Register/Create and register GPU resources, all to be destroyed upon a call to DestroyResources
 class GpuResourcesManager {
   public:
-    explicit GpuResourcesManager(Validator &gpuav, bool thread_safe_buffer_caches);
+    // Managers used from queue sub-state callbacks need TeardownTiming::Deferred
+    GpuResourcesManager(Validator& gpuav, bool thread_safe_buffer_caches, TeardownTiming teardown_timing);
 
     VkDescriptorSet GetManagedDescriptorSet(VkDescriptorSetLayout desc_set_layout);
 
@@ -141,7 +155,8 @@ class GpuResourcesManager {
     // Set "thread_safe" to true if the caches needs to be.
     class BufferCache {
       public:
-        BufferCache(bool thread_safe) : thread_safe_(thread_safe) {}
+        BufferCache(bool thread_safe, TeardownTiming teardown_timing)
+            : thread_safe_(thread_safe), teardown_timing_(teardown_timing) {}
         void Create(VkBufferUsageFlags buffer_usage_flags, const VmaAllocationCreateInfo allocation_ci);
         vko::BufferRange GetBufferRange(Validator &gpuav, VkDeviceSize byte_size, VkDeviceSize alignment,
                                         VkDeviceSize min_buffer_block_byte_size = 0);
@@ -152,6 +167,7 @@ class GpuResourcesManager {
 
       private:
         bool thread_safe_ = false;
+        TeardownTiming teardown_timing_;
         VkBufferUsageFlags buffer_usage_flags_{};
         VmaAllocationCreateInfo allocation_ci_{};
 
@@ -168,12 +184,12 @@ class GpuResourcesManager {
 
     // One cache per buffer type: having them mixed in just one would make cache lookups worse
     struct BufferCaches {
-        BufferCaches(bool thread_safe)
-            : host_coherent(thread_safe),
-              host_cached(thread_safe),
-              device_local(thread_safe),
-              device_local_indirect(thread_safe),
-              staging(thread_safe) {}
+        BufferCaches(bool thread_safe, TeardownTiming teardown_timing)
+            : host_coherent(thread_safe, teardown_timing),
+              host_cached(thread_safe, teardown_timing),
+              device_local(thread_safe, teardown_timing),
+              device_local_indirect(thread_safe, teardown_timing),
+              staging(thread_safe, teardown_timing) {}
 
         // Will have HOST_VISIBLE and HOST_COHERENT (may be HOST_CACHED)
         BufferCache host_coherent;
@@ -240,7 +256,8 @@ class StagingBuffer {
     VkMemoryPropertyFlags device_buffer_mem_prop_flags = {};
 };
 
-// Used to allocate and submit GPU-AV's own command buffers
+// Used to allocate and submit GPU-AV's own command buffers.
+// Only used from queue sub-state callbacks, so its internal errors use TeardownTiming::Deferred
 class CommandPool {
   public:
     CommandPool(Validator &gpuav, uint32_t queue_family_i, const Location &loc);
