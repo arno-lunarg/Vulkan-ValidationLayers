@@ -457,6 +457,9 @@ void Validator::InternalVmaError(LogObjectList objlist, VkResult result, const c
     LogError(vuid, objlist, Location(vvl::Func::Empty), "Internal VMA Error (%s), %s is being disabled. Details:\n%s",
              string_VkResult(result), layer_name, error_message.c_str());
 
+    // Releasing removes GPU-AV's sub-states, after which nothing reads the error buffers of what is still submitted
+    ReportSubmittedCommandBufferErrorsNow();
+
     // Once we encounter an internal issue disconnect everything.
     // This prevents need to check "if (aborted)" (which is awful when we easily forget to check somewhere and the user gets spammed
     // with errors making it hard to see the first error with the real source of the problem).

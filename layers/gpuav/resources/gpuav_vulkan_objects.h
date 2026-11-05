@@ -105,7 +105,7 @@ void CmdSynchronizedCopyBufferRange(VkCommandBuffer cb, const vko::BufferRange& 
 // Register/Create and register GPU resources, all to be destroyed upon a call to DestroyResources
 class GpuResourcesManager {
   public:
-    explicit GpuResourcesManager(Validator &gpuav, bool thread_safe_buffer_caches);
+    explicit GpuResourcesManager(Validator& gpuav, bool thread_safe_buffer_caches);
 
     VkDescriptorSet GetManagedDescriptorSet(VkDescriptorSetLayout desc_set_layout);
 

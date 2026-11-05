@@ -40,6 +40,32 @@
 
 namespace gpuav {
 
+void Validator::OnDeviceLost(const Location& loc) {
+    assert(is_device_lost);
+    ReportSubmittedCommandBufferErrorsNow();
+
+    // #ARNO_TODO I need to look at C++ future
+
+    // #ARNO_TODO Realising that any valuable submit info could be added to GPU-AV messages, dunno like corresponding fences or
+    // something
+}
+
+void Validator::OnInternalDeviceLost(const Location& loc) {
+    const bool was_device_lost = is_device_lost;
+
+    // The chassis only sets is_device_lost for results it returns to the app. GPU-AV relies on it to stop issuing GPU work
+    for (auto& vo : dispatch_device_->object_dispatch) {
+        vo->is_device_lost = true;
+    }
+
+    // No GPU-AV work gets submitted after this, so a single report covers every command buffer
+    if (!was_device_lost) {
+        // The app might not get a VK_ERROR_DEVICE_LOST itself, so tell it where it came from
+        InternalWarning(device, loc, "VK_ERROR_DEVICE_LOST was returned to a command GPU-AV issued internally.");
+        ReportSubmittedCommandBufferErrorsNow();
+    }
+}
+
 void Validator::PreCallRecordCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo,
                                           const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer,
                                           const RecordObject& record_obj, chassis::CreateBuffer& chassis_state) {
@@ -1041,6 +1067,199 @@ bool Validator::ValidateUnprotectedTensor(const vvl::CommandBuffer& cb_state, co
                          FormatHandle(tensor_state).c_str(), FormatHandle(cb_state).c_str(), more_message);
     }
     return skip;
+}
+
+void Validator::PostCallRecordAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageInfoKHR* pAcquireInfo,
+                                                   uint32_t* pImageIndex, const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordAcquireNextImageKHR(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
+                                                  VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex,
+                                                  const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordCreateSharedSwapchainsKHR(VkDevice device, uint32_t swapchainCount,
+                                                        const VkSwapchainCreateInfoKHR* pCreateInfos,
+                                                        const VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchains,
+                                                        const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR* pCreateInfo,
+                                                 const VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchain,
+                                                 const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordDeviceWaitIdle(VkDevice device, const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetEventStatus(VkDevice device, VkEvent event, const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetFenceStatus(VkDevice device, VkFence fence, const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetPastPresentationTimingEXT(VkDevice device,
+                                                           const VkPastPresentationTimingInfoEXT* pPastPresentationTimingInfo,
+                                                           VkPastPresentationTimingPropertiesEXT* pPastPresentationTimingProperties,
+                                                           const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetPastPresentationTimingGOOGLE(VkDevice device, VkSwapchainKHR swapchain,
+                                                              uint32_t* pPresentationTimingCount,
+                                                              VkPastPresentationTimingGOOGLE* pPresentationTimings,
+                                                              const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetQueryPoolResults(VkDevice device, VkQueryPool queryPool, uint32_t firstQuery, uint32_t queryCount,
+                                                  size_t dataSize, void* pData, VkDeviceSize stride, VkQueryResultFlags flags,
+                                                  const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetRefreshCycleDurationGOOGLE(VkDevice device, VkSwapchainKHR swapchain,
+                                                            VkRefreshCycleDurationGOOGLE* pDisplayTimingProperties,
+                                                            const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetSemaphoreCounterValue(VkDevice device, VkSemaphore semaphore, uint64_t* pValue,
+                                                       const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetSemaphoreCounterValueKHR(VkDevice device, VkSemaphore semaphore, uint64_t* pValue,
+                                                          const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetSwapchainCounterEXT(VkDevice device, VkSwapchainKHR swapchain, VkSurfaceCounterFlagBitsEXT counter,
+                                                     uint64_t* pCounterValue, const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordGetSwapchainStatusKHR(VkDevice device, VkSwapchainKHR swapchain, const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordQueueBindSparse(VkQueue queue, uint32_t bindInfoCount, const VkBindSparseInfo* pBindInfo,
+                                              VkFence fence, const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo, const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordQueueSetPerfHintQCOM(VkQueue queue, const VkPerfHintInfoQCOM* pPerfHintInfo,
+                                                   const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence,
+                                          const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
+                                           const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
+                                              const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordQueueWaitIdle(VkQueue queue, const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence* pFences, VkBool32 waitAll,
+                                            uint64_t timeout, const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordWaitForPresent2KHR(VkDevice device, VkSwapchainKHR swapchain,
+                                                 const VkPresentWait2InfoKHR* pPresentWait2Info, const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordWaitForPresentKHR(VkDevice device, VkSwapchainKHR swapchain, uint64_t presentId, uint64_t timeout,
+                                                const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordWaitSemaphores(VkDevice device, const VkSemaphoreWaitInfo* pWaitInfo, uint64_t timeout,
+                                             const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
+}
+
+void Validator::PostCallRecordWaitSemaphoresKHR(VkDevice device, const VkSemaphoreWaitInfo* pWaitInfo, uint64_t timeout,
+                                                const RecordObject& record_obj) {
+    if (record_obj.result == VK_ERROR_DEVICE_LOST) {
+        OnDeviceLost(record_obj.location);
+    }
 }
 
 }  // namespace gpuav
