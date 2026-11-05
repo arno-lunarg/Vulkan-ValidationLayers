@@ -633,11 +633,11 @@ void PreCallSetupShaderInstrumentationResources(Validator& gpuav, CommandBufferS
 
         const VkCommandBuffer cb_handle = cb_state.VkHandle();
         CommandBufferSubState::ErrorLoggerFunc error_logger =
-            [&gpuav, cb_handle, common_error_info, error_loggers = std::move(error_loggers)](
-                const uint32_t* error_record, const Location& loc_with_debug_region, const LogObjectList& objlist) {
+            [&gpuav, cb_handle, common_error_info,
+             error_loggers = std::move(error_loggers)](const CommandBufferSubState::ErrorLoggerContext& context) {
                 bool skip = false;
-                skip |= LogInstrumentationError(gpuav, cb_handle, objlist, common_error_info, error_record, loc_with_debug_region,
-                                                error_loggers);
+                skip |= LogInstrumentationError(gpuav, cb_handle, context.objlist, common_error_info, context.error_record,
+                                                context.loc_with_debug_region, error_loggers);
                 return skip;
             };
 

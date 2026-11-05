@@ -27,7 +27,9 @@
 
 #include "profiling/profiling.h"
 
-void vvl::QueueSubmission::BeginUse() {
+namespace vvl {
+
+void QueueSubmission::BeginUse() {
     for (SemaphoreInfo& wait : wait_semaphores) {
         wait.semaphore->BeginUse();
     }
@@ -45,7 +47,7 @@ void vvl::QueueSubmission::BeginUse() {
     }
 }
 
-void vvl::QueueSubmission::EndUse() {
+void QueueSubmission::EndUse() {
     for (SemaphoreInfo& wait : wait_semaphores) {
         wait.semaphore->EndUse();
     }
@@ -63,7 +65,7 @@ void vvl::QueueSubmission::EndUse() {
     }
 }
 
-uint64_t vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission>&& submissions) {
+uint64_t Queue::PreSubmit(std::vector<vvl::QueueSubmission>&& submissions) {
     if (!submissions.empty()) {
         submissions.back().is_last_submission = true;
     }
@@ -128,7 +130,7 @@ uint64_t vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission>&& submissions) 
     return last_batch_seq;
 }
 
-void vvl::Queue::PostSubmit() {
+void Queue::PostSubmit() {
     auto guard = Lock();
     if (!submissions_.empty()) {
         if (first_seq_to_post_process_ != 0) {
@@ -152,7 +154,7 @@ void vvl::Queue::PostSubmit() {
     first_seq_to_post_process_ = 0;
 }
 
-void vvl::Queue::Notify(uint64_t until_seq) {
+void Queue::Notify(uint64_t until_seq) {
     auto guard = Lock();
     if (until_seq == kU64Max) {
         until_seq = seq_.load();
@@ -163,7 +165,7 @@ void vvl::Queue::Notify(uint64_t until_seq) {
     cond_.notify_one();
 }
 
-void vvl::Queue::Wait(const Location& loc, uint64_t until_seq) {
+void Queue::Wait(const Location& loc, uint64_t until_seq) {
     std::shared_future<void> waiter;
     {
         auto guard = Lock();
@@ -190,12 +192,12 @@ void vvl::Queue::Wait(const Location& loc, uint64_t until_seq) {
     }
 }
 
-void vvl::Queue::NotifyAndWait(const Location& loc, uint64_t until_seq) {
+void Queue::NotifyAndWait(const Location& loc, uint64_t until_seq) {
     Notify(until_seq);
     Wait(loc, until_seq);
 }
 
-void vvl::Queue::NotifyAndWaitForPresent(const Location& loc, uint64_t until_seq) {
+void Queue::NotifyAndWaitForPresent(const Location& loc, uint64_t until_seq) {
     // Collect semaphore waits of the covered presents
     small_vector<SemaphoreInfo, 1> waits;
     {
@@ -232,7 +234,7 @@ void vvl::Queue::NotifyAndWaitForPresent(const Location& loc, uint64_t until_seq
     }
 }
 
-std::optional<vvl::SemaphoreInfo> vvl::Queue::FindTimelineWaitWithoutResolvingSignal(uint64_t until_seq) const {
+std::optional<SemaphoreInfo> Queue::FindTimelineWaitWithoutResolvingSignal(uint64_t until_seq) const {
     // A simple optimization for a long sequence of submits without host waits.
     // Stop iteration over submits if there are no timeline waits left. If only
     // binary semaphores are used this will return immediately.
@@ -281,7 +283,7 @@ std::optional<vvl::SemaphoreInfo> vvl::Queue::FindTimelineWaitWithoutResolvingSi
     return {};
 }
 
-std::pair<VkCommandBuffer, vvl::Func> vvl::Queue::GetPendingEventWaitCommand(VkEvent event) const {
+std::pair<VkCommandBuffer, vvl::Func> Queue::GetPendingEventWaitCommand(VkEvent event) const {
     auto guard = Lock();
     for (const QueueSubmission& submission : submissions_) {
         if (const auto* wait_command = vvl::Find(submission.event_wait_commands, event)) {
@@ -302,7 +304,7 @@ std::pair<VkCommandBuffer, vvl::Func> vvl::Queue::GetPendingEventWaitCommand(VkE
 // This implementation assumes that if error-free program has more active present requests than
 // swapchain images, then at least the oldest present request was completed and corresponding
 // image was re-acquired (and it got pushed to the present queue again).
-void vvl::Queue::UpdatePresentOnlyQueueProgress(const DeviceState& device_state) {
+void Queue::UpdatePresentOnlyQueueProgress(const DeviceState& device_state) {
     uint64_t seq_to_advance_to = 0;
     {
         auto guard = Lock();
@@ -337,11 +339,11 @@ void vvl::Queue::UpdatePresentOnlyQueueProgress(const DeviceState& device_state)
     }
 }
 
-void vvl::Queue::Destroy() {
+void Queue::Destroy() {
     std::unique_ptr<std::thread> dead_thread;
     {
         auto guard = Lock();
-        exit_thread_ = true;
+        exit_thread_.store(true);
         cond_.notify_all();
         dead_thread = std::move(thread_);
     }
@@ -355,12 +357,13 @@ void vvl::Queue::Destroy() {
     StateObject::Destroy();
 }
 
-std::optional<vvl::Queue::RetirementWork> vvl::Queue::NextWork() {
+std::optional<Queue::RetirementWork> Queue::NextWork() {
     auto guard = Lock();
     cond_.wait(guard, [this] {
-        return exit_thread_ || !present_requests_.empty() || (!submissions_.empty() && submissions_.front().seq <= request_seq_);
+        return exit_thread_.load() || !present_requests_.empty() ||
+               (!submissions_.empty() && submissions_.front().seq <= request_seq_);
     });
-    if (exit_thread_) {
+    if (exit_thread_.load()) {
         return {};
     }
     RetirementWork work;
@@ -374,7 +377,7 @@ std::optional<vvl::Queue::RetirementWork> vvl::Queue::NextWork() {
     return work;
 }
 
-void vvl::Queue::Retire(QueueSubmission& submission) {
+void Queue::Retire(QueueSubmission& submission) {
     if (!submission.present_use_released) {
         submission.EndUse();
     }
@@ -383,13 +386,12 @@ void vvl::Queue::Retire(QueueSubmission& submission) {
         timeline_wait_count_.fetch_sub((wait.semaphore->type == VK_SEMAPHORE_TYPE_TIMELINE) ? 1 : 0);
     }
 
-    // When device is lost skip updating substates which might access destroyed/garbage objects.
+    // Substates decide themselves what is safe to do on device lost, since they might otherwise access
+    // destroyed/garbage objects.
     // NOTE: we still need to run semaphore/fence retire routines which do not work with Vulkan
     // handles but ensure correct invariants (for example, Fence::Retire sets its std::promise)
-    if (!device_state_.is_device_lost) {
-        for (auto& item : sub_states_) {
-            item.second->Retire(submission);
-        }
+    for (auto& item : sub_states_) {
+        item.second->Retire(submission, device_state_.is_device_lost);
     }
 
     for (auto& signal : submission.signal_semaphores) {
@@ -419,7 +421,7 @@ void vvl::Queue::Retire(QueueSubmission& submission) {
     completed.set_value();
 }
 
-void vvl::Queue::RetirePresentResources(uint64_t until_seq) {
+void Queue::RetirePresentResources(uint64_t until_seq) {
     small_vector<std::shared_ptr<Fence>, 1> fences;
     {
         auto guard = Lock();
@@ -447,7 +449,7 @@ void vvl::Queue::RetirePresentResources(uint64_t until_seq) {
     }
 }
 
-void vvl::Queue::ThreadFunc() {
+void Queue::ThreadFunc() {
     VVL_TracySetThreadName(__FUNCTION__);
     while (auto work = NextWork()) {
         if (work->present_request) {
@@ -459,3 +461,5 @@ void vvl::Queue::ThreadFunc() {
         }
     }
 }
+
+}  // namespace vvl

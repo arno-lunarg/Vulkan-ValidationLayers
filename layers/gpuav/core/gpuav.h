@@ -254,6 +254,9 @@ class Validator : public GpuShaderInstrumentor {
     bool ValidateUnprotectedTensor(const vvl::CommandBuffer& cb_state, const vvl::Tensor& tensor_state, const Location& tensor_loc,
                                    const char* more_message = "") const final;
 
+    void PostCallRecordWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence* pFences, VkBool32 waitAll,
+                                     uint64_t timeout, const RecordObject& record_obj) final;
+
     void Created(vvl::DescriptorSet& set) final;
     void Created(vvl::CommandBuffer& cb_state) final;
     void Created(vvl::Queue& queue) final;

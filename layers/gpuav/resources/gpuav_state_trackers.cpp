@@ -172,16 +172,15 @@ void CommandBufferSubState::RecordEndRenderPass(const VkSubpassEndInfo*, const L
 }
 
 // For things like vkCmdCopyImage there is no "last bound" as not shaders are attached to it
-void CommandBufferSubState::AddCommandErrorLogger(const Location& loc, const LastBound* last_bound,
-                                                  ErrorLoggerFunc error_logger_func) {
+void CommandBufferSubState::AddCommandErrorLogger(const Location& loc, const LastBound* last_bound, ErrorLoggerFunc func) {
     if (command_error_loggers_.size() == gpuav_.gpuav_settings.invalid_index_command) {
         return;
     }
 
     const uint32_t label_command_i = base.GetLastLabelCommandIndex();
     command_error_loggers_.emplace_back(CommandBufferSubState::CommandErrorLogger{
-        loc, last_bound ? last_bound->cb_state.GetObjectList(last_bound->bind_point) : LogObjectList{VkHandle()},
-        std::move(error_logger_func), label_command_i});
+        loc, last_bound ? last_bound->cb_state.GetObjectList(last_bound->bind_point) : LogObjectList{VkHandle()}, std::move(func),
+        label_command_i});
 }
 
 void CommandBufferSubState::ResetCBState(bool should_destroy) {
@@ -356,8 +355,6 @@ bool CommandBufferSubState::PostSubmit(QueueSubState& queue, const Location& loc
     return true;
 }
 
-bool CommandBufferSubState::NeedsPostProcess() { return error_output_buffer_range_.buffer != VK_NULL_HANDLE; }
-
 // For the given command buffer, map its debug data buffers and read their contents for analysis.
 void CommandBufferSubState::OnCompletion(VkQueue queue, gpuav::QueueSubmission& queue_submission,
                                          gpuav::CommandBufferSubmitInfo& cb_submit_info,
@@ -367,7 +364,7 @@ void CommandBufferSubState::OnCompletion(VkQueue queue, gpuav::QueueSubmission& 
     // CommandBuffer::Destroy can happen on an other thread,
     // so when getting here after acquiring command buffer's lock,
     // make sure there are still things to process
-    if (!NeedsPostProcess()) {
+    if (error_output_buffer_range_.buffer == VK_NULL_HANDLE) {
         return;
     }
 
@@ -413,7 +410,7 @@ void CommandBufferSubState::OnCompletion(VkQueue queue, gpuav::QueueSubmission& 
                     std::string debug_region_name = vvl::CommandBuffer::GetDebugRegionName(
                         base.GetLabelCommands(), error_logger.label_cmd_i, cb_info.initial_label_stack);
                     Location loc_with_debug_region(error_logger.loc.Get(), debug_region_name, submission_loc.frame_id);
-                    error_logger.error_logger_func(error_record_ptr, loc_with_debug_region, objlist);
+                    error_logger.func({error_record_ptr, loc_with_debug_region, objlist});
                 }
 
                 // Next record
@@ -433,6 +430,9 @@ void CommandBufferSubState::OnCompletion(VkQueue queue, gpuav::QueueSubmission& 
     }
 
     cmd_errors_counts_buffer_.Clear();
+
+    // #ARNO_TODO might want to rework that early return.
+    // Why isn't it above error buffer scan loop anyway?
     if (gpuav_.aborted_) {
         return;
     }
@@ -605,7 +605,7 @@ bool QueueSubState::PostSubmit(vvl::QueueSubmission& submission) {
     return true;
 }
 
-void QueueSubState::Retire(vvl::QueueSubmission& submission) {
+void QueueSubState::Retire(vvl::QueueSubmission& submission, bool is_device_lost) {
     VVL_ZoneScoped;
     if (submission.loc.Get().function == vvl::Func::vkQueuePresentKHR) {
         // Present batch does not have any GPU-AV work to post process, skip it.
@@ -617,28 +617,30 @@ void QueueSubState::Retire(vvl::QueueSubmission& submission) {
     retiring_.emplace_back(submission.cb_infos);
     retiring_gpuav_.emplace_back(submission.gpuav);
     if (submission.is_last_submission) {
-        VkSemaphoreWaitInfo wait_info = vku::InitStructHelper();
-        wait_info.semaphoreCount = 1;
-        wait_info.pSemaphores = &barrier_sem_;
-        wait_info.pValues = &submission.seq;
+        if (!is_device_lost) {
+            VkSemaphoreWaitInfo wait_info = vku::InitStructHelper();
+            wait_info.semaphoreCount = 1;
+            wait_info.pSemaphores = &barrier_sem_;
+            wait_info.pValues = &submission.seq;
 
-        if (timeline_khr_) {
-            DispatchWaitSemaphoresKHR(gpuav_.device, &wait_info, 1'000'000'000);
-        } else {
-            DispatchWaitSemaphores(gpuav_.device, &wait_info, 1'000'000'000);
-        }
-
-        if (FenceWaiter* fence_waiter = shared_resources_cache.TryGet<FenceWaiter>()) {
-            std::vector<VkFence> fences;
-            // Lock for a short time just to move the fences, so DispatchWaitForFences
-            // below does not block PostSubmit from adding new fences.
-            {
-                std::lock_guard<std::mutex> fence_waiter_guard(fence_waiter->lock);
-                fences = std::move(fence_waiter->fences);
-                fence_waiter->fences.clear();
+            if (timeline_khr_) {
+                DispatchWaitSemaphoresKHR(gpuav_.device, &wait_info, 1'000'000'000);
+            } else {
+                DispatchWaitSemaphores(gpuav_.device, &wait_info, 1'000'000'000);
             }
-            if (!fences.empty()) {
-                DispatchWaitForFences(gpuav_.device, uint32_t(fences.size()), fences.data(), VK_TRUE, UINT64_MAX);
+
+            if (FenceWaiter* fence_waiter = shared_resources_cache.TryGet<FenceWaiter>()) {
+                std::vector<VkFence> fences;
+                // Lock for a short time just to move the fences, so DispatchWaitForFences
+                // below does not block PostSubmit from adding new fences.
+                {
+                    std::lock_guard<std::mutex> fence_waiter_guard(fence_waiter->lock);
+                    fences = std::move(fence_waiter->fences);
+                    fence_waiter->fences.clear();
+                }
+                if (!fences.empty()) {
+                    DispatchWaitForFences(gpuav_.device, uint32_t(fences.size()), fences.data(), VK_TRUE, UINT64_MAX);
+                }
             }
         }
 

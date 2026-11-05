@@ -167,18 +167,23 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
 
     vko::GpuResourcesManager gpu_resources_manager;
 
+    struct ErrorLoggerContext {
+        const uint32_t* error_record;
+        const Location& loc_with_debug_region;
+        const LogObjectList& objlist;
+        const char* error_msg_prefix;
+    };
     // Using stdext::inplace_function over std::function to allocate memory in place
     using ErrorLoggerFunc =
-        stdext::inplace_function<bool(const uint32_t* error_record, const Location& loc_with_debug_region,
-                                      const LogObjectList& objlist),
+        stdext::inplace_function<bool(const ErrorLoggerContext& context),
                                  88 /*lambda storage size (bytes), large enough to store biggest error lambda*/>;
     struct CommandErrorLogger {
         vvl::LocationCapture loc;
         LogObjectList objlist;
-        ErrorLoggerFunc error_logger_func;
+        ErrorLoggerFunc func;
         uint32_t label_cmd_i;
     };
-    void AddCommandErrorLogger(const Location &loc, const LastBound *last_bound, ErrorLoggerFunc error_logger_func);
+    void AddCommandErrorLogger(const Location& loc, const LastBound* last_bound, ErrorLoggerFunc func);
     uint32_t GetErrorLoggerIndex() { return (uint32_t)command_error_loggers_.size(); }
     const CommandErrorLogger &GetErrorLogger(uint32_t i) { return command_error_loggers_[i]; }
 
@@ -201,7 +206,6 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
   private:
     void AllocateResources(const Location &loc);
     void ResetCBState(bool should_destroy);
-    bool NeedsPostProcess();
 
     VkDescriptorSetLayout instrumentation_desc_set_layout_ = VK_NULL_HANDLE;
     std::vector<CommandErrorLogger> command_error_loggers_;
@@ -274,7 +278,7 @@ class QueueSubState : public vvl::QueueSubState {
 
     void PreSubmit(std::vector<vvl::QueueSubmission>& submissions) override;
     bool PostSubmit(vvl::QueueSubmission& submission) override;
-    void Retire(vvl::QueueSubmission&) override;
+    void Retire(vvl::QueueSubmission&, bool is_device_lost) override;
 
     // Accessed from both the submitting thread (PreSubmit/PostSubmit) and the queue thread (Retire)
     vko::SharedResourcesCache<true> shared_resources_cache;

@@ -1043,4 +1043,40 @@ bool Validator::ValidateUnprotectedTensor(const vvl::CommandBuffer& cb_state, co
     return skip;
 }
 
+void Validator::PostCallRecordWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence* pFences, VkBool32 waitAll,
+                                            uint64_t timeout, const RecordObject& record_obj) {
+    if (record_obj.result != VK_ERROR_DEVICE_LOST) {
+        return;
+    }
+
+    assert(is_device_lost);
+
+    if (is_device_lost) {
+        LogWarning("TODO-find-warning-name", LogObjectList(), record_obj.location,
+                   "A device lost occured. Trying to print errors GPU-AV might have gathered. Since GPU buffers storing GPU-AV "
+                   "errors are in theory undefined in this context, error messages may be inacurrate or wrongly report an "
+                   "unexisting error. In practice, memory tends to hold up, and reads are fine.");
+    }
+
+    std::vector<std::shared_ptr<vvl::Queue>> queues;
+    queues.reserve(device_state->Count<vvl::Queue>());
+    device_state->ForEachShared<vvl::Queue>([&queues](const std::shared_ptr<vvl::Queue>& queue) { queues.emplace_back(queue); });
+
+    // Same as DeviceWaitIdle: notify all queues before waiting on any, since retiring a submission on one queue can depend
+    // on a semaphore signal from another queue that was not notified yet
+    for (const auto& queue : queues) {
+        queue->Notify(vvl::kU64Max);
+    }
+    // Wait so errors are reported before returning to the app. Otherwise a following vkDestroyDevice can stop the queue
+    // threads before they retire anything, and the errors are lost
+    for (const auto& queue : queues) {
+        queue->Wait(record_obj.location);
+    }
+
+    // #ARNO_TODO I need to look at C++ future
+
+    // #ARNO_TODO Realising that any valuable submit info could be added to GPU-AV messages, dunno like corresponding fences or
+    // something
+}
+
 }  // namespace gpuav
