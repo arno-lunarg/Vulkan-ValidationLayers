@@ -13,6 +13,7 @@
 
 #include <vulkan/vulkan_core.h>
 #include <cstdint>
+#include <cstdio>
 #include "layer_validation_tests.h"
 #include "pipeline_helper.h"
 #include "descriptor_helper.h"
@@ -866,18 +867,28 @@ TEST_F(NegativeGpuAVDescriptorIndexing, ArrayOOBVariableDescriptorCountAllocateU
 
 TEST_F(NegativeGpuAVDescriptorIndexing, ArrayOOBVariableDescriptorCountNonBindless) {
     TEST_DESCRIPTION("VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT in a non bindless descriptor array");
+    printf("[ArrayOOBVarCount] test start\n");
+    fflush(stdout);
 
     RETURN_IF_SKIP(InitGpuVUDescriptorIndexing());
+    printf("[ArrayOOBVarCount] InitGpuVUDescriptorIndexing done\n");
+    fflush(stdout);
     InitRenderTarget();
+    printf("[ArrayOOBVarCount] InitRenderTarget done\n");
+    fflush(stdout);
 
     VkDescriptorBindingFlags ds_binding_flags[2] = {0, VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT};
 
     VkDescriptorSetLayoutBindingFlagsCreateInfo layout_createinfo_binding_flags = vku::InitStructHelper();
+    printf("[ArrayOOBVarCount] VkDescriptorSetLayoutBindingFlagsCreateInfo InitStructHelper done\n");
+    fflush(stdout);
     layout_createinfo_binding_flags.bindingCount = 2;
     layout_createinfo_binding_flags.pBindingFlags = ds_binding_flags;
 
     uint32_t desc_counts = 2;  // Layout has 4, but only 2 are allocated
     VkDescriptorSetVariableDescriptorCountAllocateInfo variable_count = vku::InitStructHelper();
+    printf("[ArrayOOBVarCount] VkDescriptorSetVariableDescriptorCountAllocateInfo InitStructHelper done\n");
+    fflush(stdout);
     variable_count.descriptorSetCount = 1;
     variable_count.pDescriptorCounts = &desc_counts;
 
@@ -887,20 +898,42 @@ TEST_F(NegativeGpuAVDescriptorIndexing, ArrayOOBVariableDescriptorCountNonBindle
                                            {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, VK_SHADER_STAGE_ALL, nullptr},
                                        },
                                        0, &layout_createinfo_binding_flags, 0, &variable_count);
+    printf("[ArrayOOBVarCount] OneOffDescriptorSet constructed (Initialized: %d)\n", descriptor_set.Initialized() ? 1 : 0);
+    fflush(stdout);
     const vkt::PipelineLayout pipeline_layout(*m_device, {&descriptor_set.layout_});
+    printf("[ArrayOOBVarCount] vkt::PipelineLayout constructed\n");
+    fflush(stdout);
 
     vkt::Buffer buffer(*m_device, 1024, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, kHostVisibleMemProps);
+    printf("[ArrayOOBVarCount] vkt::Buffer constructed\n");
+    fflush(stdout);
     vkt::Image image(*m_device, 16, 16, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
+    printf("[ArrayOOBVarCount] vkt::Image constructed\n");
+    fflush(stdout);
     image.SetLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    printf("[ArrayOOBVarCount] image.SetLayout done\n");
+    fflush(stdout);
     vkt::ImageView image_view = image.CreateView();
+    printf("[ArrayOOBVarCount] image.CreateView done\n");
+    fflush(stdout);
     vkt::Sampler sampler(*m_device, SafeSaneSamplerCreateInfo());
+    printf("[ArrayOOBVarCount] vkt::Sampler constructed\n");
+    fflush(stdout);
 
     descriptor_set.WriteDescriptorBufferInfo(0, buffer, 0, VK_WHOLE_SIZE);
+    printf("[ArrayOOBVarCount] WriteDescriptorBufferInfo(binding 0) done\n");
+    fflush(stdout);
     descriptor_set.WriteDescriptorImageInfo(1, image_view, sampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 0);
+    printf("[ArrayOOBVarCount] WriteDescriptorImageInfo(binding 1, element 0) done\n");
+    fflush(stdout);
     descriptor_set.WriteDescriptorImageInfo(1, image_view, sampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1);
+    printf("[ArrayOOBVarCount] WriteDescriptorImageInfo(binding 1, element 1) done\n");
+    fflush(stdout);
     descriptor_set.UpdateDescriptorSets();
+    printf("[ArrayOOBVarCount] UpdateDescriptorSets done\n");
+    fflush(stdout);
 
     const char* fs_source = R"glsl(
         #version 450
@@ -913,28 +946,62 @@ TEST_F(NegativeGpuAVDescriptorIndexing, ArrayOOBVariableDescriptorCountNonBindle
         )glsl";
 
     VkShaderObj vs(*m_device, kVertexDrawPassthroughGlsl, VK_SHADER_STAGE_VERTEX_BIT);
+    printf("[ArrayOOBVarCount] VkShaderObj vs constructed\n");
+    fflush(stdout);
     VkShaderObj fs(*m_device, fs_source, VK_SHADER_STAGE_FRAGMENT_BIT);
+    printf("[ArrayOOBVarCount] VkShaderObj fs constructed\n");
+    fflush(stdout);
 
     CreatePipelineHelper pipe(*this);
+    printf("[ArrayOOBVarCount] CreatePipelineHelper constructed\n");
+    fflush(stdout);
     pipe.shader_stages_ = {vs.GetStageCreateInfo(), fs.GetStageCreateInfo()};
+    printf("[ArrayOOBVarCount] GetStageCreateInfo (vs, fs) done\n");
+    fflush(stdout);
     pipe.gp_ci_.layout = pipeline_layout;
     pipe.CreateGraphicsPipeline();
+    printf("[ArrayOOBVarCount] CreateGraphicsPipeline done\n");
+    fflush(stdout);
 
     m_command_buffer.Begin();
+    printf("[ArrayOOBVarCount] m_command_buffer.Begin done\n");
+    fflush(stdout);
     m_command_buffer.BeginRenderPass(m_renderPassBeginInfo);
+    printf("[ArrayOOBVarCount] BeginRenderPass done\n");
+    fflush(stdout);
     vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
+    printf("[ArrayOOBVarCount] vkCmdBindPipeline done\n");
+    fflush(stdout);
     vk::CmdBindDescriptorSets(m_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_set.set_, 0,
                               nullptr);
+    printf("[ArrayOOBVarCount] vkCmdBindDescriptorSets done\n");
+    fflush(stdout);
     vk::CmdDraw(m_command_buffer, 3, 1, 0, 0);
+    printf("[ArrayOOBVarCount] vkCmdDraw done\n");
+    fflush(stdout);
     m_command_buffer.EndRenderPass();
+    printf("[ArrayOOBVarCount] EndRenderPass done\n");
+    fflush(stdout);
     m_command_buffer.End();
+    printf("[ArrayOOBVarCount] m_command_buffer.End done\n");
+    fflush(stdout);
 
     uint32_t* tex_index_ptr = (uint32_t*)buffer.Memory().Map();
+    printf("[ArrayOOBVarCount] buffer.Memory().Map done (ptr: %p)\n", static_cast<void*>(tex_index_ptr));
+    fflush(stdout);
     *tex_index_ptr = 2;
+    printf("[ArrayOOBVarCount] wrote tex_index = 2\n");
+    fflush(stdout);
 
     m_errorMonitor->SetDesiredError("Index of 2 used to index descriptor array of length 2", gpuav::glsl::kMaxErrorsPerCmd);
+    printf("[ArrayOOBVarCount] SetDesiredError done\n");
+    fflush(stdout);
     m_default_queue->SubmitAndWait(m_command_buffer);
+    printf("[ArrayOOBVarCount] SubmitAndWait done\n");
+    fflush(stdout);
     m_errorMonitor->VerifyFound();
+    printf("[ArrayOOBVarCount] VerifyFound done, test end (destructors run next)\n");
+    fflush(stdout);
 }
 
 TEST_F(NegativeGpuAVDescriptorIndexing, ArrayOOBVariableDescriptorCountZero) {
