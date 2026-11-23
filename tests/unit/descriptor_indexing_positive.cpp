@@ -11,6 +11,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 
+#include <cstdio>
 #include "layer_validation_tests.h"
 #include "pipeline_helper.h"
 #include "descriptor_helper.h"
@@ -440,4 +441,73 @@ TEST_F(PositiveDescriptorIndexing, VariableDescriptorCountBuffer) {
     vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipe);
     vk::CmdDispatch(m_command_buffer, 1u, 1u, 1u);
     m_command_buffer.End();
+}
+
+TEST_F(PositiveDescriptorIndexing, VariableDescriptorCountNonBindless) {
+    TEST_DESCRIPTION(
+        "Same device setup and descriptor set creation as "
+        "NegativeGpuAVDescriptorIndexing.ArrayOOBVariableDescriptorCountNonBindless, "
+        "without GPU-AV");
+    printf("[VarCountNonBindless] test start\n");
+    fflush(stdout);
+
+    // Same extensions/features as GpuAVDescriptorIndexingTest::InitGpuVUDescriptorIndexing
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    AddRequiredExtensions(VK_KHR_MAINTENANCE_4_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::maintenance4);
+    AddRequiredFeature(vkt::Feature::shaderInt64);
+    AddRequiredFeature(vkt::Feature::runtimeDescriptorArray);
+    AddRequiredFeature(vkt::Feature::descriptorBindingSampledImageUpdateAfterBind);
+    AddRequiredFeature(vkt::Feature::descriptorBindingPartiallyBound);
+    AddRequiredFeature(vkt::Feature::descriptorBindingVariableDescriptorCount);
+    AddRequiredFeature(vkt::Feature::shaderSampledImageArrayNonUniformIndexing);
+    AddRequiredFeature(vkt::Feature::shaderStorageBufferArrayNonUniformIndexing);
+    RETURN_IF_SKIP(Init());
+    printf("[VarCountNonBindless] Init done\n");
+    fflush(stdout);
+    InitRenderTarget();
+    printf("[VarCountNonBindless] InitRenderTarget done\n");
+    fflush(stdout);
+
+    // Only the last binding is variable sized, and it is NOT a runtime array
+    VkDescriptorBindingFlags ds_binding_flags[2] = {0, VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT};
+    VkDescriptorSetLayoutBindingFlagsCreateInfo layout_createinfo_binding_flags = vku::InitStructHelper();
+    layout_createinfo_binding_flags.bindingCount = 2;
+    layout_createinfo_binding_flags.pBindingFlags = ds_binding_flags;
+
+    vkt::DescriptorSetLayout ds_layout(*m_device,
+                                       {
+                                           {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
+                                           {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, VK_SHADER_STAGE_ALL, nullptr},
+                                       },
+                                       0, &layout_createinfo_binding_flags);
+    printf("[VarCountNonBindless] vkCreateDescriptorSetLayout done (initialized: %d)\n", ds_layout.initialized() ? 1 : 0);
+    fflush(stdout);
+
+    VkDescriptorPoolSize pool_sizes[2] = {
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4},
+    };
+    VkDescriptorPoolCreateInfo pool_ci = vku::InitStructHelper();
+    pool_ci.flags = 0;
+    pool_ci.maxSets = 1;
+    pool_ci.poolSizeCount = 2;
+    pool_ci.pPoolSizes = pool_sizes;
+    vkt::DescriptorPool pool(*m_device, pool_ci);
+    printf("[VarCountNonBindless] vkCreateDescriptorPool done (initialized: %d)\n", pool.initialized() ? 1 : 0);
+    fflush(stdout);
+
+    uint32_t desc_counts = 2;  // Layout has 4, but only 2 are allocated
+    VkDescriptorSetVariableDescriptorCountAllocateInfo variable_count = vku::InitStructHelper();
+    variable_count.descriptorSetCount = 1;
+    variable_count.pDescriptorCounts = &desc_counts;
+
+    VkDescriptorSetAllocateInfo ds_alloc_info = vku::InitStructHelper(&variable_count);
+    ds_alloc_info.descriptorPool = pool;
+    ds_alloc_info.descriptorSetCount = 1;
+    ds_alloc_info.pSetLayouts = &ds_layout.handle();
+    VkDescriptorSet ds = VK_NULL_HANDLE;
+    const VkResult result = vk::AllocateDescriptorSets(*m_device, &ds_alloc_info, &ds);
+    printf("[VarCountNonBindless] vkAllocateDescriptorSets done (result: %d)\n", static_cast<int>(result));
+    fflush(stdout);
 }
